@@ -76,15 +76,24 @@ export const ProjectHoverPreview: React.FC<ProjectHoverPreviewProps> = ({ hovere
 
   if (!hoveredProject) return null;
 
-  const mediaUrl = hoveredProject.hoverMedia || hoveredProject.heroMedia;
+  const mediaUrl =
+    hoveredProject.hoverMedia ||
+    hoveredProject.heroMedia ||
+    (hoveredProject.gallery && hoveredProject.gallery.length > 0 ? hoveredProject.gallery[0] : '');
+
   if (!mediaUrl) return null;
 
   const isVideo =
-    mediaUrl.endsWith('.mp4') || mediaUrl.endsWith('.webm') || mediaUrl.startsWith('data:video');
+    mediaUrl.endsWith('.mp4') ||
+    mediaUrl.endsWith('.webm') ||
+    mediaUrl.startsWith('data:video') ||
+    mediaUrl.includes('.mp4') ||
+    mediaUrl.includes('.webm') ||
+    mediaUrl.includes('video');
 
   return (
     <div
-      className="fixed pointer-events-none z-50 transition-opacity duration-300 ease-out hidden lg:block"
+      className="fixed pointer-events-none z-[9999] transition-opacity duration-200 ease-out hidden sm:block"
       style={{
         left: `${pos.x}px`,
         top: `${pos.y}px`,
