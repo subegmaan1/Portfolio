@@ -1,0 +1,493 @@
+import React, { useState } from 'react';
+import { Project, ProjectCategory } from '../types';
+import { saveProjectApi, uploadMediaApi } from '../lib/api';
+import { ArrowLeft, Save, Upload, Plus, Trash2, Image as ImageIcon } from 'lucide-react';
+
+interface AdminProjectFormProps {
+  initialProject: Partial<Project> | null;
+  onCancel: () => void;
+  onSaveSuccess: () => void;
+}
+
+export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
+  initialProject,
+  onCancel,
+  onSaveSuccess
+}) => {
+  const isEditing = Boolean(initialProject?.id);
+
+  const [title, setTitle] = useState(initialProject?.title || '');
+  const [slug, setSlug] = useState(initialProject?.slug || '');
+  const [category, setCategory] = useState<ProjectCategory>(
+    initialProject?.category || 'PROJECTION DESIGN'
+  );
+  const [year, setYear] = useState(initialProject?.year || new Date().getFullYear().toString());
+  const [role, setRole] = useState(initialProject?.role || 'Projection Designer');
+  const [medium, setMedium] = useState(initialProject?.medium || '');
+  const [shortDescription, setShortDescription] = useState(initialProject?.shortDescription || '');
+  const [longDescription, setLongDescription] = useState(initialProject?.longDescription || '');
+  const [heroMedia, setHeroMedia] = useState(initialProject?.heroMedia || '');
+  const [hoverMedia, setHoverMedia] = useState(initialProject?.hoverMedia || '');
+  const [gallery, setGallery] = useState<string[]>(initialProject?.gallery || []);
+  const [videos, setVideos] = useState<string[]>(initialProject?.videos || []);
+  const [toolsStr, setToolsStr] = useState((initialProject?.tools || []).join(', '));
+  const [credits, setCredits] = useState<{ role: string; name: string }[]>(
+    initialProject?.credits || [{ role: 'Projection Designer', name: 'Subeg Singh' }]
+  );
+  const [featured, setFeatured] = useState(initialProject?.featured || false);
+  const [published, setPublished] = useState(initialProject?.published ?? true);
+
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  // Generate slug from title automatically if empty
+  const handleTitleChange = (val: string) => {
+    setTitle(val);
+    if (!slug || !isEditing) {
+      setSlug(val.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-'));
+    }
+  };
+
+  const handleFileUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    target: 'hero' | 'hover' | 'gallery'
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      const media = await uploadMediaApi(file);
+      if (target === 'hero') setHeroMedia(media.url);
+      else if (target === 'hover') setHoverMedia(media.url);
+      else if (target === 'gallery') setGallery(prev => [...prev, media.url]);
+    } catch {
+      alert('Failed to upload file');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const addCredit = () => {
+    setCredits(prev => [...prev, { role: '', name: '' }]);
+  };
+
+  const removeCredit = (index: number) => {
+    setCredits(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const addGalleryUrl = () => {
+    setGallery(prev => [...prev, '']);
+  };
+
+  const addVideoUrl = () => {
+    setVideos(prev => [...prev, '']);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) {
+      setError('Project title is required');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+
+    const toolsArr = toolsStr
+      .split(',')
+      .map(t => t.trim())
+      .filter(Boolean);
+
+    const projectData: Partial<Project> = {
+      id: initialProject?.id,
+      title,
+      slug: slug || title.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+      category,
+      year,
+      role,
+      medium,
+      shortDescription,
+      longDescription,
+      heroMedia,
+      hoverMedia: hoverMedia || heroMedia,
+      gallery,
+      videos,
+      tools: toolsArr,
+      credits: credits.filter(c => c.role && c.name),
+      featured,
+      published
+    };
+
+    try {
+      await saveProjectApi(projectData);
+      onSaveSuccess();
+    } catch (err) {
+      setError('Failed to save project');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-8 max-w-4xl">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-neutral-800 pb-6">
+        <div className="flex items-center space-x-4">
+          <button
+            onClick={onCancel}
+            className="p-2 bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <div>
+            <h1 className="font-syne font-bold text-2xl text-neutral-100">
+              {isEditing ? `EDIT PROJECT: ${initialProject?.title}` : 'ADD NEW PROJECT'}
+            </h1>
+            <p className="font-mono text-xs text-neutral-400">
+              Configure project metadata, hero media, galleries, and credits
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={handleSubmit}
+          disabled={saving}
+          className="px-6 py-2.5 bg-neutral-100 text-neutral-950 font-mono text-xs font-bold uppercase tracking-wider hover:bg-white transition-colors flex items-center space-x-2 disabled:opacity-50"
+          id="save-project-btn"
+        >
+          <Save className="w-4 h-4" />
+          <span>{saving ? 'Saving...' : 'Save Project'}</span>
+        </button>
+      </div>
+
+      {error && (
+        <div className="p-3 bg-red-950/50 border border-red-800 text-red-300 font-mono text-xs">
+          {error}
+        </div>
+      )}
+
+      {/* Form Fields */}
+      <form onSubmit={handleSubmit} className="space-y-8 font-mono text-xs">
+        {/* Core Metadata */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-neutral-900/60 p-6 border border-neutral-800">
+          <div className="space-y-2">
+            <label className="block text-neutral-400 uppercase">Project Title *</label>
+            <input
+              type="text"
+              value={title}
+              onChange={e => handleTitleChange(e.target.value)}
+              placeholder="e.g. LUMEN: SYMPHONIC MONOLITH"
+              className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 focus:outline-none focus:border-neutral-600 font-syne font-bold text-base"
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-neutral-400 uppercase">URL Slug</label>
+            <input
+              type="text"
+              value={slug}
+              onChange={e => setSlug(e.target.value)}
+              placeholder="e.g. lumen-symphonic-monolith"
+              className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-300 focus:outline-none focus:border-neutral-600"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-neutral-400 uppercase">Category *</label>
+            <select
+              value={category}
+              onChange={e => setCategory(e.target.value as ProjectCategory)}
+              className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 focus:outline-none focus:border-neutral-600 uppercase font-semibold"
+            >
+              <option value="PROJECTION DESIGN">PROJECTION DESIGN</option>
+              <option value="IMMERSIVE MEDIA">IMMERSIVE MEDIA</option>
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-neutral-400 uppercase">Year</label>
+            <input
+              type="text"
+              value={year}
+              onChange={e => setYear(e.target.value)}
+              placeholder="e.g. 2025"
+              className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 focus:outline-none focus:border-neutral-600"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-neutral-400 uppercase">Designer Role</label>
+            <input
+              type="text"
+              value={role}
+              onChange={e => setRole(e.target.value)}
+              placeholder="e.g. Lead Projection Designer & Scenographer"
+              className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 focus:outline-none focus:border-neutral-600"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-neutral-400 uppercase">Medium / Physical Format</label>
+            <input
+              type="text"
+              value={medium}
+              onChange={e => setMedium(e.target.value)}
+              placeholder="e.g. 360° Architectural Projection Mapping"
+              className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 focus:outline-none focus:border-neutral-600"
+            />
+          </div>
+        </div>
+
+        {/* Descriptions */}
+        <div className="bg-neutral-900/60 p-6 border border-neutral-800 space-y-6">
+          <div className="space-y-2">
+            <label className="block text-neutral-400 uppercase">Short Summary Description</label>
+            <textarea
+              value={shortDescription}
+              onChange={e => setShortDescription(e.target.value)}
+              rows={2}
+              placeholder="Concise 1-2 sentence overview shown in list..."
+              className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 focus:outline-none focus:border-neutral-600"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-neutral-400 uppercase">Full Case Study Description</label>
+            <textarea
+              value={longDescription}
+              onChange={e => setLongDescription(e.target.value)}
+              rows={5}
+              placeholder="Detailed architectural concept, execution, technical breakdown..."
+              className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 focus:outline-none focus:border-neutral-600"
+            />
+          </div>
+        </div>
+
+        {/* Hero & Hover Media Uploads */}
+        <div className="bg-neutral-900/60 p-6 border border-neutral-800 space-y-6">
+          <h3 className="font-syne font-bold text-sm text-neutral-200 uppercase">
+            Hero & Cursor Hover Media
+          </h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Hero Media */}
+            <div className="space-y-3">
+              <label className="block text-neutral-400 uppercase">Hero Media URL</label>
+              <input
+                type="text"
+                value={heroMedia}
+                onChange={e => setHeroMedia(e.target.value)}
+                placeholder="Image or MP4 Video URL"
+                className="w-full px-4 py-2 bg-neutral-950 border border-neutral-800 text-neutral-100"
+              />
+              <label className="inline-flex items-center space-x-2 px-3 py-1.5 bg-neutral-800 border border-neutral-700 text-neutral-200 cursor-pointer hover:bg-neutral-700">
+                <Upload className="w-3.5 h-3.5" />
+                <span>Upload File</span>
+                <input
+                  type="file"
+                  onChange={e => handleFileUpload(e, 'hero')}
+                  className="hidden"
+                  accept="image/*,video/*"
+                />
+              </label>
+              {heroMedia && (
+                <div className="aspect-video bg-neutral-950 border border-neutral-800 overflow-hidden">
+                  <img src={heroMedia} alt="Hero Preview" className="w-full h-full object-cover" />
+                </div>
+              )}
+            </div>
+
+            {/* Hover Media */}
+            <div className="space-y-3">
+              <label className="block text-neutral-400 uppercase">Hover Preview Media URL</label>
+              <input
+                type="text"
+                value={hoverMedia}
+                onChange={e => setHoverMedia(e.target.value)}
+                placeholder="Cursor preview URL (defaults to hero media)"
+                className="w-full px-4 py-2 bg-neutral-950 border border-neutral-800 text-neutral-100"
+              />
+              <label className="inline-flex items-center space-x-2 px-3 py-1.5 bg-neutral-800 border border-neutral-700 text-neutral-200 cursor-pointer hover:bg-neutral-700">
+                <Upload className="w-3.5 h-3.5" />
+                <span>Upload File</span>
+                <input
+                  type="file"
+                  onChange={e => handleFileUpload(e, 'hover')}
+                  className="hidden"
+                  accept="image/*,video/*"
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* Tools & Credits */}
+        <div className="bg-neutral-900/60 p-6 border border-neutral-800 space-y-6">
+          <div className="space-y-2">
+            <label className="block text-neutral-400 uppercase">Software Tools / Capabilities (Comma separated)</label>
+            <input
+              type="text"
+              value={toolsStr}
+              onChange={e => setToolsStr(e.target.value)}
+              placeholder="e.g. TouchDesigner, Disguise vx4, Notch, Unreal Engine 5"
+              className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100"
+            />
+          </div>
+
+          <div className="space-y-3 pt-4 border-t border-neutral-800">
+            <div className="flex justify-between items-center">
+              <label className="text-neutral-400 uppercase block">Project Credits</label>
+              <button
+                type="button"
+                onClick={addCredit}
+                className="text-amber-400 hover:text-amber-300 flex items-center space-x-1"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Credit</span>
+              </button>
+            </div>
+
+            {credits.map((cred, idx) => (
+              <div key={idx} className="flex items-center space-x-3">
+                <input
+                  type="text"
+                  value={cred.role}
+                  onChange={e => {
+                    const next = [...credits];
+                    next[idx].role = e.target.value;
+                    setCredits(next);
+                  }}
+                  placeholder="Role (e.g. Conductor)"
+                  className="flex-1 px-3 py-2 bg-neutral-950 border border-neutral-800 text-neutral-100"
+                />
+                <input
+                  type="text"
+                  value={cred.name}
+                  onChange={e => {
+                    const next = [...credits];
+                    next[idx].name = e.target.value;
+                    setCredits(next);
+                  }}
+                  placeholder="Name"
+                  className="flex-1 px-3 py-2 bg-neutral-950 border border-neutral-800 text-neutral-100"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeCredit(idx)}
+                  className="p-2 text-red-400 hover:text-red-300"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Gallery & Video Links */}
+        <div className="bg-neutral-900/60 p-6 border border-neutral-800 space-y-6">
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <label className="text-neutral-400 uppercase">Gallery Images</label>
+              <div className="flex space-x-2">
+                <button
+                  type="button"
+                  onClick={addGalleryUrl}
+                  className="text-neutral-300 hover:text-white"
+                >
+                  + Add URL
+                </button>
+                <label className="text-amber-400 hover:text-amber-300 cursor-pointer">
+                  + Upload Image
+                  <input
+                    type="file"
+                    onChange={e => handleFileUpload(e, 'gallery')}
+                    className="hidden"
+                    accept="image/*"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {gallery.map((url, idx) => (
+                <div key={idx} className="bg-neutral-950 p-2 border border-neutral-800 space-y-2">
+                  {url ? (
+                    <div className="aspect-video relative overflow-hidden bg-neutral-900 border border-neutral-800">
+                      <img src={url} alt="" className="w-full h-full object-cover" />
+                    </div>
+                  ) : null}
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="text"
+                      value={url}
+                      placeholder="Paste image or video URL..."
+                      onChange={e => {
+                        const next = [...gallery];
+                        next[idx] = e.target.value;
+                        setGallery(next);
+                      }}
+                      className="flex-1 px-2.5 py-1.5 bg-neutral-900 border border-neutral-800 text-xs text-neutral-200 focus:outline-none"
+                      autoFocus={url === ''}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setGallery(prev => prev.filter((_, i) => i !== idx))}
+                      className="p-1.5 text-neutral-500 hover:text-red-400"
+                      title="Remove Item"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Status Checkboxes */}
+        <div className="bg-neutral-900/60 p-6 border border-neutral-800 flex flex-wrap gap-8">
+          <label className="inline-flex items-center space-x-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={published}
+              onChange={e => setPublished(e.target.checked)}
+              className="w-4 h-4 accent-emerald-500"
+            />
+            <span className="uppercase text-neutral-200">Publish Project Publicly</span>
+          </label>
+
+          <label className="inline-flex items-center space-x-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={featured}
+              onChange={e => setFeatured(e.target.checked)}
+              className="w-4 h-4 accent-amber-500"
+            />
+            <span className="uppercase text-neutral-200">Feature on Homepage Highlight</span>
+          </label>
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex justify-end space-x-4 pt-4">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-6 py-2.5 border border-neutral-800 text-neutral-300 hover:bg-neutral-800"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={saving}
+            className="px-8 py-2.5 bg-neutral-100 text-neutral-950 font-bold uppercase hover:bg-white disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : 'Save Project'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};

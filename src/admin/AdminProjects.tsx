@@ -1,0 +1,320 @@
+import React, { useState } from 'react';
+import { Project } from '../types';
+import { deleteProjectApi, reorderProjectsApi, saveProjectApi } from '../lib/api';
+import { BatchPhotoProjectModal } from './BatchPhotoProjectModal';
+import {
+  Plus,
+  Search,
+  ArrowUp,
+  ArrowDown,
+  Edit,
+  Trash2,
+  CheckCircle,
+  XCircle,
+  Eye,
+  Filter,
+  Layers
+} from 'lucide-react';
+
+interface AdminProjectsProps {
+  projects: Project[];
+  onRefreshProjects: () => void;
+  onAddNewProject: () => void;
+  onEditProject: (project: Project) => void;
+}
+
+export const AdminProjects: React.FC<AdminProjectsProps> = ({
+  projects,
+  onRefreshProjects,
+  onAddNewProject,
+  onEditProject
+}) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
+  const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
+  const [loading, setLoading] = useState(false);
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
+
+  // Filter projects
+  const filtered = projects.filter(p => {
+    const matchesSearch =
+      p.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.medium.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchesCategory =
+      selectedCategory === 'ALL' || p.category === selectedCategory;
+
+    const matchesStatus =
+      selectedStatus === 'ALL' ||
+      (selectedStatus === 'PUBLISHED' && p.published) ||
+      (selectedStatus === 'DRAFT' && !p.published);
+
+    return matchesSearch && matchesCategory && matchesStatus;
+  });
+
+  const handleDelete = async (project: Project) => {
+    if (confirm(`Are you sure you want to delete project "${project.title}"?`)) {
+      setLoading(true);
+      try {
+        await deleteProjectApi(project.id);
+        onRefreshProjects();
+      } catch (err) {
+        alert('Failed to delete project');
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  const handleTogglePublish = async (project: Project) => {
+    try {
+      await saveProjectApi({
+        id: project.id,
+        published: !project.published
+      });
+      onRefreshProjects();
+    } catch {
+      alert('Failed to update status');
+    }
+  };
+
+  const handleMove = async (index: number, direction: 'UP' | 'DOWN') => {
+    if (direction === 'UP' && index === 0) return;
+    if (direction === 'DOWN' && index === filtered.length - 1) return;
+
+    const targetIndex = direction === 'UP' ? index - 1 : index + 1;
+    const reorderedList = [...filtered];
+    const [moved] = reorderedList.splice(index, 1);
+    reorderedList.splice(targetIndex, 0, moved);
+
+    const reorderedIds = reorderedList.map(p => p.id);
+    try {
+      await reorderProjectsApi(reorderedIds);
+      onRefreshProjects();
+    } catch {
+      alert('Failed to reorder projects');
+    }
+  };
+
+  return (
+    <div className="space-y-6 max-w-6xl">
+      {/* Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-800 pb-6">
+        <div>
+          <h1 className="font-syne font-bold text-2xl lg:text-3xl text-neutral-100">
+            PROJECT MANAGEMENT
+          </h1>
+          <p className="font-mono text-xs text-neutral-400 mt-1">
+            Create, edit, reorder & organize portfolio case studies
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-auto">
+          <button
+            onClick={() => setIsBatchModalOpen(true)}
+            className="px-4 py-2.5 bg-neutral-900 border border-neutral-700 text-neutral-100 font-mono text-xs font-bold uppercase tracking-wider hover:bg-neutral-800 hover:border-neutral-500 transition-colors flex items-center space-x-2"
+            id="admin-batch-photos-btn"
+          >
+            <Layers className="w-4 h-4 text-emerald-400" />
+            <span>Batch Photos to Projects</span>
+          </button>
+
+          <button
+            onClick={onAddNewProject}
+            className="px-5 py-2.5 bg-neutral-100 text-neutral-950 font-mono text-xs font-bold uppercase tracking-wider hover:bg-white transition-colors flex items-center space-x-2"
+            id="admin-create-project-btn"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Project</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Filters Bar */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 font-mono text-xs">
+        {/* Search */}
+        <div className="md:col-span-6 relative">
+          <Search className="w-4 h-4 absolute left-3 top-3 text-neutral-500" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            placeholder="Search projects by title, role or medium..."
+            className="w-full pl-9 pr-4 py-2.5 bg-neutral-900 border border-neutral-800 text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-neutral-600"
+          />
+        </div>
+
+        {/* Category Filter */}
+        <div className="md:col-span-3">
+          <select
+            value={selectedCategory}
+            onChange={e => setSelectedCategory(e.target.value)}
+            className="w-full px-3 py-2.5 bg-neutral-900 border border-neutral-800 text-neutral-100 focus:outline-none focus:border-neutral-600"
+          >
+            <option value="ALL">All Categories</option>
+            <option value="PROJECTION DESIGN">PROJECTION DESIGN</option>
+            <option value="IMMERSIVE MEDIA">IMMERSIVE MEDIA</option>
+          </select>
+        </div>
+
+        {/* Status Filter */}
+        <div className="md:col-span-3">
+          <select
+            value={selectedStatus}
+            onChange={e => setSelectedStatus(e.target.value)}
+            className="w-full px-3 py-2.5 bg-neutral-900 border border-neutral-800 text-neutral-100 focus:outline-none focus:border-neutral-600"
+          >
+            <option value="ALL">All Statuses</option>
+            <option value="PUBLISHED">Published Only</option>
+            <option value="DRAFT">Drafts Only</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Projects Table */}
+      {filtered.length === 0 ? (
+        <div className="bg-neutral-900 border border-neutral-800 p-12 text-center space-y-3">
+          <p className="font-mono text-xs text-neutral-400 uppercase">
+            No projects matched your search criteria.
+          </p>
+          <button
+            onClick={() => {
+              setSearchTerm('');
+              setSelectedCategory('ALL');
+              setSelectedStatus('ALL');
+            }}
+            className="font-mono text-xs text-amber-400 underline"
+          >
+            Reset Filters
+          </button>
+        </div>
+      ) : (
+        <div className="bg-neutral-900 border border-neutral-800 overflow-x-auto">
+          <table className="w-full text-left font-mono text-xs">
+            <thead className="bg-neutral-950/80 border-b border-neutral-800 text-neutral-400 uppercase">
+              <tr>
+                <th className="p-4 w-12">Order</th>
+                <th className="p-4">Project Title</th>
+                <th className="p-4">Category</th>
+                <th className="p-4">Year</th>
+                <th className="p-4">Status</th>
+                <th className="p-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-800/60">
+              {filtered.map((proj, idx) => (
+                <tr key={proj.id} className="hover:bg-neutral-800/40 transition-colors">
+                  {/* Order Controls */}
+                  <td className="p-4">
+                    <div className="flex items-center space-x-1">
+                      <button
+                        onClick={() => handleMove(idx, 'UP')}
+                        disabled={idx === 0}
+                        className="p-1 text-neutral-500 hover:text-neutral-100 disabled:opacity-20"
+                        title="Move Up"
+                      >
+                        <ArrowUp className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleMove(idx, 'DOWN')}
+                        disabled={idx === filtered.length - 1}
+                        className="p-1 text-neutral-500 hover:text-neutral-100 disabled:opacity-20"
+                        title="Move Down"
+                      >
+                        <ArrowDown className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </td>
+
+                  {/* Title & Preview Image */}
+                  <td className="p-4">
+                    <div className="flex items-center space-x-3">
+                      {proj.heroMedia && (
+                        <img
+                          src={proj.heroMedia}
+                          alt={proj.title}
+                          className="w-10 h-8 object-cover border border-neutral-800 shrink-0"
+                        />
+                      )}
+                      <div>
+                        <span className="font-syne font-bold text-sm text-neutral-100 block">
+                          {proj.title}
+                        </span>
+                        <span className="text-[10px] text-neutral-400 font-light truncate max-w-xs block">
+                          {proj.role}
+                        </span>
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* Category */}
+                  <td className="p-4">
+                    <span className="px-2 py-1 bg-neutral-800 text-neutral-300 border border-neutral-700/50 uppercase text-[10px]">
+                      {proj.category}
+                    </span>
+                  </td>
+
+                  {/* Year */}
+                  <td className="p-4 text-neutral-300">{proj.year}</td>
+
+                  {/* Status Toggle */}
+                  <td className="p-4">
+                    <button
+                      onClick={() => handleTogglePublish(proj)}
+                      className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[10px] uppercase font-semibold transition-colors ${
+                        proj.published
+                          ? 'bg-emerald-950/80 border border-emerald-800 text-emerald-300 hover:bg-emerald-900'
+                          : 'bg-amber-950/80 border border-amber-800 text-amber-300 hover:bg-amber-900'
+                      }`}
+                    >
+                      {proj.published ? (
+                        <>
+                          <CheckCircle className="w-3 h-3" />
+                          <span>Published</span>
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="w-3 h-3" />
+                          <span>Draft</span>
+                        </>
+                      )}
+                    </button>
+                  </td>
+
+                  {/* Actions */}
+                  <td className="p-4 text-right">
+                    <div className="flex items-center justify-end space-x-2">
+                      <button
+                        onClick={() => onEditProject(proj)}
+                        className="p-1.5 bg-neutral-800 text-neutral-200 hover:text-white hover:bg-neutral-700 rounded transition-colors"
+                        title="Edit Project"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(proj)}
+                        className="p-1.5 bg-red-950/50 text-red-400 hover:text-red-300 hover:bg-red-900/50 rounded transition-colors"
+                        title="Delete Project"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {/* Batch Photo Project Modal */}
+      <BatchPhotoProjectModal
+        isOpen={isBatchModalOpen}
+        onClose={() => setIsBatchModalOpen(false)}
+        onSuccess={() => {
+          onRefreshProjects();
+        }}
+      />
+    </div>
+  );
+};

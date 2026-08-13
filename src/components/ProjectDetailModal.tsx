@@ -1,0 +1,265 @@
+import React, { useEffect } from 'react';
+import { Project } from '../types';
+import { X, ArrowLeft, ArrowRight, Wrench, Users, Calendar, Layers, ExternalLink } from 'lucide-react';
+import { motion } from 'motion/react';
+
+interface ProjectDetailModalProps {
+  project: Project | null;
+  allProjects: Project[];
+  onClose: () => void;
+  onSelectProject: (proj: Project) => void;
+}
+
+export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
+  project,
+  allProjects,
+  onClose,
+  onSelectProject
+}) => {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    if (project) {
+      document.body.style.overflow = 'hidden';
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      document.body.style.overflow = 'auto';
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [project, onClose]);
+
+  if (!project) return null;
+
+  // Filter same category published projects for prev/next
+  const categoryProjects = allProjects.filter(p => p.category === project.category && p.published);
+  const currentIndex = categoryProjects.findIndex(p => p.id === project.id);
+  const prevProject = currentIndex > 0 ? categoryProjects[currentIndex - 1] : categoryProjects[categoryProjects.length - 1];
+  const nextProject = currentIndex < categoryProjects.length - 1 ? categoryProjects[currentIndex + 1] : categoryProjects[0];
+
+  const isHeroVideo = project.heroMedia.endsWith('.mp4') || project.heroMedia.endsWith('.webm');
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 50, scale: 0.98, filter: 'blur(4px)' }}
+      animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
+      exit={{ opacity: 0, y: 50, scale: 0.98, filter: 'blur(4px)' }}
+      transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+      className="fixed inset-0 z-50 overflow-y-auto bg-neutral-950/95 backdrop-blur-xl text-neutral-100"
+    >
+      {/* Fixed Header Bar */}
+      <div className="sticky top-0 z-50 bg-neutral-950/80 backdrop-blur-md border-b border-neutral-800/80 px-6 lg:px-12 h-20 flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <span className="font-mono text-xs text-neutral-400 uppercase tracking-wider">
+            {project.category}
+          </span>
+          <span className="text-neutral-600">&bull;</span>
+          <span className="font-mono text-xs text-neutral-300 font-semibold uppercase">
+            {project.year}
+          </span>
+        </div>
+
+        <button
+          onClick={onClose}
+          className="p-2.5 rounded-full border border-neutral-800 text-neutral-300 hover:text-white hover:bg-neutral-800 transition-all"
+          title="Close Case Study (Esc)"
+          id="close-project-modal-btn"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      <div className="max-w-6xl mx-auto px-6 lg:px-12 py-12 space-y-16">
+        {/* Project Header Title */}
+        <div className="space-y-6">
+          <h1 className="font-syne font-extrabold text-3xl sm:text-5xl lg:text-7xl uppercase tracking-tight leading-tight text-neutral-100">
+            {project.title}
+          </h1>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 py-6 border-y border-neutral-800/80 font-mono text-xs">
+            <div>
+              <span className="text-neutral-500 uppercase block mb-1">Role</span>
+              <span className="text-neutral-200 font-medium">{project.role}</span>
+            </div>
+            <div>
+              <span className="text-neutral-500 uppercase block mb-1">Medium</span>
+              <span className="text-neutral-200 font-medium">{project.medium || 'Digital Scenography'}</span>
+            </div>
+            <div>
+              <span className="text-neutral-500 uppercase block mb-1">Year</span>
+              <span className="text-neutral-200 font-medium">{project.year}</span>
+            </div>
+            <div>
+              <span className="text-neutral-500 uppercase block mb-1">Practice</span>
+              <span className="text-neutral-200 font-medium">{project.category}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Hero Media */}
+        {project.heroMedia && (
+          <div className="relative w-full aspect-video rounded-none overflow-hidden border border-neutral-800 bg-neutral-900 shadow-2xl">
+            {isHeroVideo ? (
+              <video
+                src={project.heroMedia}
+                autoPlay
+                loop
+                muted
+                playsInline
+                controls
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <img
+                src={project.heroMedia}
+                alt={project.title}
+                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+            )}
+          </div>
+        )}
+
+        {/* Case Study Overview & Long Description */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-12 pt-6">
+          <div className="md:col-span-8 space-y-8">
+            <div className="space-y-4">
+              <h2 className="font-syne font-bold text-2xl text-neutral-100">
+                Project Overview
+              </h2>
+              <p className="text-lg text-neutral-300 font-light leading-relaxed">
+                {project.shortDescription}
+              </p>
+            </div>
+
+            {project.longDescription && (
+              <div className="space-y-4 pt-6 border-t border-neutral-800/60">
+                <h3 className="font-mono text-xs uppercase tracking-widest text-neutral-400">
+                  Concept & Architectural Execution
+                </h3>
+                <p className="text-neutral-300 leading-relaxed font-light whitespace-pre-line text-base sm:text-lg">
+                  {project.longDescription}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Tools & Credits Sidebar */}
+          <div className="md:col-span-4 space-y-8 bg-neutral-900/30 p-6 border border-neutral-800/80">
+            {/* Tools */}
+            {project.tools && project.tools.length > 0 && (
+              <div className="space-y-3">
+                <span className="font-mono text-xs text-neutral-400 uppercase tracking-widest flex items-center space-x-2">
+                  <Wrench className="w-3.5 h-3.5" />
+                  <span>Technical Capabilities</span>
+                </span>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {project.tools.map((tool, idx) => (
+                    <span
+                      key={idx}
+                      className="font-mono text-xs bg-neutral-800/80 text-neutral-300 px-3 py-1 border border-neutral-700/50"
+                    >
+                      {tool}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Credits */}
+            {project.credits && project.credits.length > 0 && (
+              <div className="space-y-3 pt-6 border-t border-neutral-800/80">
+                <span className="font-mono text-xs text-neutral-400 uppercase tracking-widest flex items-center space-x-2">
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Project Credits</span>
+                </span>
+                <div className="space-y-2 font-mono text-xs pt-1">
+                  {project.credits.map((cred, idx) => (
+                    <div key={idx} className="flex justify-between items-baseline border-b border-neutral-800/40 pb-1.5">
+                      <span className="text-neutral-500">{cred.role}</span>
+                      <span className="text-neutral-200 font-medium">{cred.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Gallery Grid */}
+        {project.gallery && project.gallery.length > 0 && (
+          <div className="space-y-6 pt-12 border-t border-neutral-800/80">
+            <h3 className="font-mono text-xs uppercase tracking-widest text-neutral-400">
+              Visual Documentation Gallery
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              {project.gallery.map((img, idx) => (
+                <div key={idx} className="aspect-video bg-neutral-900 border border-neutral-800 overflow-hidden group">
+                  <img
+                    src={img}
+                    alt={`${project.title} gallery documentation ${idx + 1}`}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Video Embeds if any */}
+        {project.videos && project.videos.length > 0 && (
+          <div className="space-y-6 pt-12 border-t border-neutral-800/80">
+            <h3 className="font-mono text-xs uppercase tracking-widest text-neutral-400">
+              Motion & Documentation Video Stream
+            </h3>
+            <div className="space-y-6">
+              {project.videos.map((videoUrl, idx) => (
+                <div key={idx} className="aspect-video bg-neutral-900 border border-neutral-800 overflow-hidden">
+                  <iframe
+                    src={videoUrl}
+                    className="w-full h-full"
+                    allowFullScreen
+                    title={`${project.title} Video ${idx + 1}`}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Next / Prev Project Navigation */}
+        <div className="pt-16 border-t border-neutral-800/80 grid grid-cols-1 sm:grid-cols-2 gap-6">
+          {prevProject && (
+            <button
+              onClick={() => onSelectProject(prevProject)}
+              className="text-left p-6 bg-neutral-900/40 border border-neutral-800 hover:border-neutral-600 transition-all group flex items-center space-x-4"
+              id="prev-project-btn"
+            >
+              <ArrowLeft className="w-6 h-6 text-neutral-500 group-hover:text-white group-hover:-translate-x-1 transition-transform" />
+              <div>
+                <span className="font-mono text-[10px] text-neutral-500 uppercase block">Previous Case Study</span>
+                <span className="font-syne font-bold text-lg text-neutral-200 group-hover:text-white">{prevProject.title}</span>
+              </div>
+            </button>
+          )}
+
+          {nextProject && (
+            <button
+              onClick={() => onSelectProject(nextProject)}
+              className="text-right p-6 bg-neutral-900/40 border border-neutral-800 hover:border-neutral-600 transition-all group flex items-center justify-end space-x-4"
+              id="next-project-btn"
+            >
+              <div>
+                <span className="font-mono text-[10px] text-neutral-500 uppercase block">Next Case Study</span>
+                <span className="font-syne font-bold text-lg text-neutral-200 group-hover:text-white">{nextProject.title}</span>
+              </div>
+              <ArrowRight className="w-6 h-6 text-neutral-500 group-hover:text-white group-hover:translate-x-1 transition-transform" />
+            </button>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+};
