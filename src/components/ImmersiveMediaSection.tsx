@@ -1,6 +1,6 @@
 import React from 'react';
 import { Project } from '../types';
-import { ArrowUpRight } from 'lucide-react';
+import { ArrowUpRight, Play } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface ImmersiveMediaSectionProps {
@@ -14,8 +14,8 @@ const containerVariants = {
   show: {
     opacity: 1,
     transition: {
-      staggerChildren: 0.1,
-      delayChildren: 0.05
+      staggerChildren: 0.08,
+      delayChildren: 0.04
     }
   }
 };
@@ -90,7 +90,7 @@ export const ImmersiveMediaSection: React.FC<ImmersiveMediaSectionProps> = ({
             >
               {/* Left Title & Meta */}
               <div className="space-y-3 flex-1">
-                <div className="flex items-center space-x-4">
+                <div className="flex flex-wrap items-center gap-3">
                   <span className="font-mono text-[10px] text-teal-400/80 font-bold">
                     0{idx + 1}
                   </span>
@@ -100,6 +100,12 @@ export const ImmersiveMediaSection: React.FC<ImmersiveMediaSectionProps> = ({
                   <span className="font-mono text-[10px] text-white/50 uppercase tracking-wider hidden sm:inline">
                     {proj.role}
                   </span>
+                  {proj.enableStreaming && proj.videoStreamUrl && (
+                    <span className="inline-flex items-center space-x-1 font-mono text-[9px] text-teal-300 bg-teal-950/60 border border-teal-500/40 px-2 py-0.5 uppercase tracking-wider">
+                      <Play className="w-2.5 h-2.5 fill-current" />
+                      <span>Video Stream</span>
+                    </span>
+                  )}
                 </div>
 
                 <h2 className="font-syne font-bold text-2xl sm:text-4xl lg:text-5xl text-neutral-100 group-hover:text-teal-300 transition-colors tracking-tight">
@@ -137,5 +143,6 @@ export const ImmersiveMediaSection: React.FC<ImmersiveMediaSectionProps> = ({
     </motion.section>
   );
 };
+
 
 

@@ -191,36 +191,8 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ about, projects = []
         </div>
       </motion.div>
 
-      {/* Supporting Technical Capabilities */}
-      <motion.div variants={itemVariants} className="pt-8 sm:pt-12 border-t border-white/[0.06]">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div className="font-mono text-[10px] tracking-[0.3em] text-teal-400/80 uppercase font-semibold">
-            03 &bull; Supporting Capabilities
-          </div>
-          <div className="font-syne text-xs sm:text-sm text-neutral-300">
-            {about.primaryPractice} &bull; {about.secondaryPractice}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {about.capabilities.map((cap, idx) => (
-            <div
-              key={idx}
-              className="p-4 bg-white/[0.02] border border-white/[0.06] hover:border-teal-500/40 transition-colors group rounded-none"
-            >
-              <span className="font-mono text-[9px] text-teal-400/60 block mb-1">
-                0{idx + 1}
-              </span>
-              <span className="font-syne font-medium text-xs sm:text-sm text-neutral-200 group-hover:text-white transition-colors">
-                {cap}
-              </span>
-            </div>
-          ))}
-        </div>
-      </motion.div>
-
-      {/* Big Practice Feature Cards */}
-      <motion.div variants={itemVariants} className="pt-8 sm:pt-12 mt-8 sm:mt-12 border-t border-white/[0.06] grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
+      {/* Big Practice Feature Cards (Placed above supporting capabilities) */}
+      <motion.div variants={itemVariants} className="pt-8 sm:pt-12 mt-4 sm:mt-6 border-t border-white/[0.06] grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
         {/* Big Card 1: Projection Design */}
         <div
           onClick={() => onNavigateToSection('PROJECTION DESIGN')}
@@ -345,6 +317,34 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ about, projects = []
               </div>
             </div>
           </div>
+        </div>
+      </motion.div>
+
+      {/* Supporting Technical Capabilities */}
+      <motion.div variants={itemVariants} className="pt-8 sm:pt-12 mt-8 sm:mt-12 border-t border-white/[0.06]">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div className="font-mono text-[10px] tracking-[0.3em] text-teal-400/80 uppercase font-semibold">
+            03 &bull; Supporting Capabilities
+          </div>
+          <div className="font-syne text-xs sm:text-sm text-neutral-300">
+            {about.primaryPractice} &bull; {about.secondaryPractice}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {about.capabilities.map((cap, idx) => (
+            <div
+              key={idx}
+              className="p-4 bg-white/[0.02] border border-white/[0.06] hover:border-teal-500/40 transition-colors group rounded-none"
+            >
+              <span className="font-mono text-[9px] text-teal-400/60 block mb-1">
+                0{idx + 1}
+              </span>
+              <span className="font-syne font-medium text-xs sm:text-sm text-neutral-200 group-hover:text-white transition-colors">
+                {cap}
+              </span>
+            </div>
+          ))}
         </div>
       </motion.div>
 

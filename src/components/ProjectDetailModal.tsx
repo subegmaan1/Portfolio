@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { Project } from '../types';
-import { X, ArrowLeft, ArrowRight, Wrench, Users, Calendar, Layers, ExternalLink } from 'lucide-react';
+import { parseVideoUrl } from '../lib/videoUtils';
+import { X, ArrowLeft, ArrowRight, Wrench, Users, Play, Video, ExternalLink } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface ProjectDetailModalProps {
@@ -186,6 +187,58 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
             )}
           </div>
         </div>
+
+        {/* Dedicated Cinematic Video Stream Section (Activated only when enabled and link provided) */}
+        {project.enableStreaming && project.videoStreamUrl && (() => {
+          const parsed = parseVideoUrl(project.videoStreamUrl);
+          if (parsed.type === 'invalid') return null;
+
+          return (
+            <div className="space-y-6 pt-12 border-t border-neutral-800/80" id="project-video-stream-section">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center space-x-3">
+                  <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-pulse" />
+                  <h3 className="font-mono text-xs uppercase tracking-widest text-teal-300 font-bold">
+                    Cinematic Documentation Stream
+                  </h3>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="font-mono text-[10px] text-white/50 bg-neutral-900 border border-white/10 px-3 py-1 uppercase tracking-wider">
+                    {parsed.type.toUpperCase()} 4K PLAYBACK
+                  </span>
+                </div>
+              </div>
+
+              {/* Cinematic Video Player Container */}
+              <div className="relative rounded-sm overflow-hidden bg-neutral-950 border border-teal-500/30 shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_30px_rgba(20,184,166,0.15)] group">
+                {/* Crosshairs */}
+                <span className="absolute top-2 left-2 font-mono text-[10px] text-teal-400/60 z-20 select-none pointer-events-none">+</span>
+                <span className="absolute top-2 right-2 font-mono text-[10px] text-teal-400/60 z-20 select-none pointer-events-none">+</span>
+                <span className="absolute bottom-2 left-2 font-mono text-[10px] text-teal-400/60 z-20 select-none pointer-events-none">+</span>
+                <span className="absolute bottom-2 right-2 font-mono text-[10px] text-teal-400/60 z-20 select-none pointer-events-none">+</span>
+
+                <div className="relative w-full aspect-video bg-neutral-950">
+                  {parsed.type === 'direct' ? (
+                    <video
+                      src={parsed.embedUrl}
+                      controls
+                      playsInline
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <iframe
+                      src={parsed.embedUrl}
+                      className="w-full h-full border-0"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowFullScreen
+                      title={`${project.title} Video Stream`}
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Gallery Grid */}
         {project.gallery && project.gallery.length > 0 && (

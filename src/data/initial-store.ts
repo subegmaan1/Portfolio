@@ -70,6 +70,8 @@ export const initialProjects: Project[] = [
     ],
     featured: true,
     published: true,
+    videoStreamUrl: "https://vimeo.com/76979871",
+    enableStreaming: true,
     sortOrder: 1,
     createdAt: "2025-01-10T10:00:00.000Z",
     updatedAt: "2025-01-10T10:00:00.000Z"

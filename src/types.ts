@@ -23,6 +23,8 @@ export interface Project {
   credits: ProjectCredit[];
   featured: boolean;
   published: boolean;
+  videoStreamUrl?: string;
+  enableStreaming?: boolean;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
