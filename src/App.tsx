@@ -19,6 +19,7 @@ import { ProjectionDesignSection } from './components/ProjectionDesignSection';
 import { ImmersiveMediaSection } from './components/ImmersiveMediaSection';
 import { ContactSection } from './components/ContactSection';
 import { ProjectDetailModal } from './components/ProjectDetailModal';
+import { ProjectHoverPreview } from './components/ProjectHoverPreview';
 
 // Admin imports
 import { AdminLogin } from './admin/AdminLogin';
@@ -46,6 +47,7 @@ export default function App() {
   const [loading, setLoading] = useState<boolean>(false);
 
   // Interaction States
+  const [hoveredProject, setHoveredProject] = useState<Project | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
 
   // Admin Dashboard States
@@ -187,6 +189,9 @@ export default function App() {
       {/* Kinetic WebGL Shader Canvas Background with Per-Page Color Palettes */}
       <ImmersiveBackground activeSection={activeSection} />
 
+      {/* Cursor Floating Hover Media Preview */}
+      <ProjectHoverPreview hoveredProject={hoveredProject} />
+
       {/* Top Restricted Navigation */}
       <HeaderNav
         activeSection={activeSection}
@@ -231,6 +236,7 @@ export default function App() {
                 <ProjectionDesignSection
                   projects={projects}
                   onSelectProject={proj => setSelectedProject(proj)}
+                  onHoverProject={setHoveredProject}
                 />
               )}
 
@@ -239,6 +245,7 @@ export default function App() {
                 <ImmersiveMediaSection
                   projects={projects}
                   onSelectProject={proj => setSelectedProject(proj)}
+                  onHoverProject={setHoveredProject}
                 />
               )}
 
