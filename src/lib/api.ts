@@ -73,29 +73,41 @@ async function seedInitialProjectsIfNeeded(): Promise<Project[]> {
 }
 
 // Subscribe to real-time project updates across devices
-export function subscribeProjects(callback: (projects: Project[]) => void) {
-  const q = query(collection(db, 'projects'));
-  return onSnapshot(
-    q,
-    async snapshot => {
-      if (snapshot.empty) {
-        const seeded = await seedInitialProjectsIfNeeded();
-        callback(seeded);
-        return;
+export function subscribeProjects(callback: (projects: Project[]) => void): () => void {
+  if (!db) {
+    const local = localStorage.getItem('subeg_projects_data');
+    callback(local ? JSON.parse(local) : initialProjects);
+    return () => {};
+  }
+  try {
+    const q = query(collection(db, 'projects'));
+    return onSnapshot(
+      q,
+      async snapshot => {
+        if (snapshot.empty) {
+          const seeded = await seedInitialProjectsIfNeeded();
+          callback(seeded);
+          return;
+        }
+        const docsData: (Project & { order?: number })[] = snapshot.docs.map(
+          d => ({ id: d.id, ...d.data() } as Project & { order?: number })
+        );
+        // Sort by order or index
+        docsData.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        callback(docsData);
+      },
+      error => {
+        console.warn('Firestore projects snapshot notice, using cached data:', error);
+        const local = localStorage.getItem('subeg_projects_data');
+        callback(local ? JSON.parse(local) : initialProjects);
       }
-      const docsData: (Project & { order?: number })[] = snapshot.docs.map(
-        d => ({ id: d.id, ...d.data() } as Project & { order?: number })
-      );
-      // Sort by order or index
-      docsData.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-      callback(docsData);
-    },
-    error => {
-      console.warn('Firestore projects snapshot error, using cached data:', error);
-      const local = localStorage.getItem('subeg_projects_data');
-      callback(local ? JSON.parse(local) : initialProjects);
-    }
-  );
+    );
+  } catch (err) {
+    console.warn('Firestore subscribe projects failed:', err);
+    const local = localStorage.getItem('subeg_projects_data');
+    callback(local ? JSON.parse(local) : initialProjects);
+    return () => {};
+  }
 }
 
 export async function fetchProjects(category?: string): Promise<Project[]> {
@@ -138,26 +150,41 @@ export async function fetchProjectByIdOrSlug(idOrSlug: string): Promise<Project>
 }
 
 // Subscribe to About data real-time
-export function subscribeAboutData(callback: (about: AboutData) => void) {
-  const docRef = doc(db, 'about', 'main');
-  return onSnapshot(
-    docRef,
-    async docSnap => {
-      if (!docSnap.exists()) {
-        await setDoc(docRef, initialAboutData);
-        callback(initialAboutData);
-        return;
+export function subscribeAboutData(callback: (about: AboutData) => void): () => void {
+  if (!db) {
+    const local = localStorage.getItem('subeg_about_data');
+    callback(local ? JSON.parse(local) : initialAboutData);
+    return () => {};
+  }
+  try {
+    const docRef = doc(db, 'about', 'main');
+    return onSnapshot(
+      docRef,
+      async docSnap => {
+        if (!docSnap.exists()) {
+          await setDoc(docRef, initialAboutData);
+          callback(initialAboutData);
+          return;
+        }
+        callback(docSnap.data() as AboutData);
+      },
+      () => {
+        const local = localStorage.getItem('subeg_about_data');
+        callback(local ? JSON.parse(local) : initialAboutData);
       }
-      callback(docSnap.data() as AboutData);
-    },
-    () => {
-      const local = localStorage.getItem('subeg_about_data');
-      callback(local ? JSON.parse(local) : initialAboutData);
-    }
-  );
+    );
+  } catch {
+    const local = localStorage.getItem('subeg_about_data');
+    callback(local ? JSON.parse(local) : initialAboutData);
+    return () => {};
+  }
 }
 
 export async function fetchAboutData(): Promise<AboutData> {
+  if (!db) {
+    const local = localStorage.getItem('subeg_about_data');
+    return local ? JSON.parse(local) : initialAboutData;
+  }
   try {
     const docRef = doc(db, 'about', 'main');
     const docSnap = await getDoc(docRef);
@@ -178,26 +205,41 @@ export async function fetchAboutData(): Promise<AboutData> {
 }
 
 // Subscribe to Contact data real-time
-export function subscribeContactData(callback: (contact: ContactData) => void) {
-  const docRef = doc(db, 'contact', 'main');
-  return onSnapshot(
-    docRef,
-    async docSnap => {
-      if (!docSnap.exists()) {
-        await setDoc(docRef, initialContactData);
-        callback(initialContactData);
-        return;
+export function subscribeContactData(callback: (contact: ContactData) => void): () => void {
+  if (!db) {
+    const local = localStorage.getItem('subeg_contact_data');
+    callback(local ? JSON.parse(local) : initialContactData);
+    return () => {};
+  }
+  try {
+    const docRef = doc(db, 'contact', 'main');
+    return onSnapshot(
+      docRef,
+      async docSnap => {
+        if (!docSnap.exists()) {
+          await setDoc(docRef, initialContactData);
+          callback(initialContactData);
+          return;
+        }
+        callback(docSnap.data() as ContactData);
+      },
+      () => {
+        const local = localStorage.getItem('subeg_contact_data');
+        callback(local ? JSON.parse(local) : initialContactData);
       }
-      callback(docSnap.data() as ContactData);
-    },
-    () => {
-      const local = localStorage.getItem('subeg_contact_data');
-      callback(local ? JSON.parse(local) : initialContactData);
-    }
-  );
+    );
+  } catch {
+    const local = localStorage.getItem('subeg_contact_data');
+    callback(local ? JSON.parse(local) : initialContactData);
+    return () => {};
+  }
 }
 
 export async function fetchContactData(): Promise<ContactData> {
+  if (!db) {
+    const local = localStorage.getItem('subeg_contact_data');
+    return local ? JSON.parse(local) : initialContactData;
+  }
   try {
     const docRef = doc(db, 'contact', 'main');
     const docSnap = await getDoc(docRef);
@@ -218,26 +260,41 @@ export async function fetchContactData(): Promise<ContactData> {
 }
 
 // Subscribe to Settings real-time
-export function subscribeSiteSettings(callback: (settings: SiteSettings) => void) {
-  const docRef = doc(db, 'settings', 'main');
-  return onSnapshot(
-    docRef,
-    async docSnap => {
-      if (!docSnap.exists()) {
-        await setDoc(docRef, initialSiteSettings);
-        callback(initialSiteSettings);
-        return;
+export function subscribeSiteSettings(callback: (settings: SiteSettings) => void): () => void {
+  if (!db) {
+    const local = localStorage.getItem('subeg_site_settings');
+    callback(local ? JSON.parse(local) : initialSiteSettings);
+    return () => {};
+  }
+  try {
+    const docRef = doc(db, 'settings', 'main');
+    return onSnapshot(
+      docRef,
+      async docSnap => {
+        if (!docSnap.exists()) {
+          await setDoc(docRef, initialSiteSettings);
+          callback(initialSiteSettings);
+          return;
+        }
+        callback(docSnap.data() as SiteSettings);
+      },
+      () => {
+        const local = localStorage.getItem('subeg_site_settings');
+        callback(local ? JSON.parse(local) : initialSiteSettings);
       }
-      callback(docSnap.data() as SiteSettings);
-    },
-    () => {
-      const local = localStorage.getItem('subeg_site_settings');
-      callback(local ? JSON.parse(local) : initialSiteSettings);
-    }
-  );
+    );
+  } catch {
+    const local = localStorage.getItem('subeg_site_settings');
+    callback(local ? JSON.parse(local) : initialSiteSettings);
+    return () => {};
+  }
 }
 
 export async function fetchSiteSettings(): Promise<SiteSettings> {
+  if (!db) {
+    const local = localStorage.getItem('subeg_site_settings');
+    return local ? JSON.parse(local) : initialSiteSettings;
+  }
   try {
     const docRef = doc(db, 'settings', 'main');
     const docSnap = await getDoc(docRef);
