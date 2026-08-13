@@ -14,7 +14,6 @@ import {
 } from './lib/api';
 import { ImmersiveBackground } from './components/ImmersiveBackground';
 import { HeaderNav } from './components/HeaderNav';
-import { ProjectHoverPreview } from './components/ProjectHoverPreview';
 import { AboutSection } from './components/AboutSection';
 import { ProjectionDesignSection } from './components/ProjectionDesignSection';
 import { ImmersiveMediaSection } from './components/ImmersiveMediaSection';
@@ -47,7 +46,6 @@ export default function App() {
   const [loading, setLoading] = useState<boolean>(false);
 
   // Interaction States
-  const [hoveredProject, setHoveredProject] = useState<Project | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
 
   // Admin Dashboard States
@@ -100,10 +98,6 @@ export default function App() {
       unsubSettings();
     };
   }, []);
-
-  useEffect(() => {
-    setHoveredProject(null);
-  }, [activeSection, selectedProject, isAdminOpen]);
 
   const handleOpenAdmin = () => {
     if (isAdminAuthenticated) {
@@ -205,9 +199,6 @@ export default function App() {
         about={about}
       />
 
-      {/* Cursor Floating Hover Media Preview */}
-      <ProjectHoverPreview hoveredProject={hoveredProject} />
-
       {/* Main View Switching */}
       <main className="relative z-10 overflow-x-hidden">
         {loading || !about || !contact ? (
@@ -240,7 +231,6 @@ export default function App() {
                 <ProjectionDesignSection
                   projects={projects}
                   onSelectProject={proj => setSelectedProject(proj)}
-                  onHoverProject={proj => setHoveredProject(proj)}
                 />
               )}
 
@@ -249,7 +239,6 @@ export default function App() {
                 <ImmersiveMediaSection
                   projects={projects}
                   onSelectProject={proj => setSelectedProject(proj)}
-                  onHoverProject={proj => setHoveredProject(proj)}
                 />
               )}
 

@@ -6,7 +6,6 @@ import { motion } from 'motion/react';
 interface ProjectionDesignSectionProps {
   projects: Project[];
   onSelectProject: (project: Project) => void;
-  onHoverProject: (project: Project | null) => void;
 }
 
 const containerVariants = {
@@ -35,15 +34,8 @@ const itemVariants = {
 
 export const ProjectionDesignSection: React.FC<ProjectionDesignSectionProps> = ({
   projects,
-  onSelectProject,
-  onHoverProject
+  onSelectProject
 }) => {
-  React.useEffect(() => {
-    return () => {
-      onHoverProject(null);
-    };
-  }, [onHoverProject]);
-
   const filtered = projects.filter(p => p.category === 'PROJECTION DESIGN' && p.published);
 
   return (
@@ -83,9 +75,6 @@ export const ProjectionDesignSection: React.FC<ProjectionDesignSectionProps> = (
               key={proj.id}
               variants={itemVariants}
               onClick={() => onSelectProject(proj)}
-              onMouseEnter={() => onHoverProject(proj)}
-              onMouseMove={() => onHoverProject(proj)}
-              onMouseLeave={() => onHoverProject(null)}
               className="group relative border-b border-white/[0.06] py-8 lg:py-12 cursor-pointer transition-colors duration-300 hover:bg-white/[0.02] px-4 -mx-4 flex flex-col lg:flex-row lg:items-center justify-between gap-6"
               id={`project-item-${proj.slug}`}
             >

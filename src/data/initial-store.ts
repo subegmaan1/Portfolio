@@ -19,7 +19,7 @@ export const initialAboutData: AboutData = {
     "Disguise & Resolume Media Server Systems"
   ],
   cvUrl: "",
-  photoUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80"
+  photoUrl: ""
 };
 
 export const initialContactData: ContactData = {

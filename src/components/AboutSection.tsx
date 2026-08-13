@@ -50,6 +50,9 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ about, projects = []
   const [card1Touched, setCard1Touched] = React.useState(false);
   const [card2Touched, setCard2Touched] = React.useState(false);
 
+  const isStockPhoto = !about.photoUrl || about.photoUrl.includes('photo-1507003211169');
+  const validPhotoUrl = isStockPhoto ? '' : about.photoUrl;
+
   return (
     <motion.section
       variants={containerVariants}
@@ -133,9 +136,9 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ about, projects = []
                   onClick={() => setPortraitTouched(prev => !prev)}
                   className="relative aspect-[3/4] w-full bg-neutral-900 overflow-hidden border border-white/5 rounded-sm cursor-pointer select-none"
                 >
-                  {about.photoUrl ? (
+                  {validPhotoUrl ? (
                     <img
-                      src={about.photoUrl}
+                      src={validPhotoUrl}
                       alt={about.name || 'Subeg Singh'}
                       className={`w-full h-full object-cover object-top contrast-125 transition-all duration-500 active:grayscale-0 group-active:grayscale-0 ${
                         portraitTouched ? 'grayscale-0 scale-105' : 'grayscale group-hover:grayscale-0 group-hover:scale-105'
