@@ -1,3 +1,15 @@
+import {
+  collection,
+  doc,
+  getDocs,
+  getDoc,
+  setDoc,
+  deleteDoc,
+  onSnapshot,
+  query,
+  writeBatch
+} from 'firebase/firestore';
+import { db } from './firebase';
 import { AboutData, ContactData, MediaItem, Project, SiteSettings } from '../types';
 import { initialAboutData, initialContactData, initialProjects, initialSiteSettings } from '../data/initial-store';
 
@@ -8,15 +20,11 @@ export function setAdminToken(token: string) {
   if (token) {
     try {
       localStorage.setItem(ADMIN_TOKEN_KEY, token);
-    } catch {
-      // Ignore
-    }
+    } catch {}
   } else {
     try {
       localStorage.removeItem(ADMIN_TOKEN_KEY);
-    } catch {
-      // Ignore
-    }
+    } catch {}
   }
 }
 
@@ -33,173 +41,229 @@ function getAuthHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+// Convert File to Base64 Data URL for universal cross-device image persistence
+export async function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Helper to seed initial data into Firestore if collection/document is empty
+let isSeedingProjects = false;
+async function seedInitialProjectsIfNeeded(): Promise<Project[]> {
+  if (isSeedingProjects) return initialProjects;
+  isSeedingProjects = true;
+  try {
+    const batch = writeBatch(db);
+    initialProjects.forEach((proj, idx) => {
+      const docRef = doc(db, 'projects', proj.id);
+      batch.set(docRef, { ...proj, order: idx });
+    });
+    await batch.commit();
+    return initialProjects;
+  } catch (err) {
+    console.error('Failed to seed initial projects to Firestore:', err);
+    return initialProjects;
+  } finally {
+    isSeedingProjects = false;
+  }
+}
+
+// Subscribe to real-time project updates across devices
+export function subscribeProjects(callback: (projects: Project[]) => void) {
+  const q = query(collection(db, 'projects'));
+  return onSnapshot(
+    q,
+    async snapshot => {
+      if (snapshot.empty) {
+        const seeded = await seedInitialProjectsIfNeeded();
+        callback(seeded);
+        return;
+      }
+      const docsData: (Project & { order?: number })[] = snapshot.docs.map(
+        d => ({ id: d.id, ...d.data() } as Project & { order?: number })
+      );
+      // Sort by order or index
+      docsData.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      callback(docsData);
+    },
+    error => {
+      console.warn('Firestore projects snapshot error, using cached data:', error);
+      const local = localStorage.getItem('subeg_projects_data');
+      callback(local ? JSON.parse(local) : initialProjects);
+    }
+  );
+}
+
 export async function fetchProjects(category?: string): Promise<Project[]> {
   try {
-    const url = category ? `/api/projects?category=${encodeURIComponent(category)}` : '/api/projects';
-    const res = await fetch(url, {
-      credentials: 'include',
-      headers: getAuthHeaders()
-    });
-    const ct = res.headers.get('content-type') || '';
-    if (res.ok && ct.includes('application/json')) {
-      const data: Project[] = await res.json();
-      try {
-        localStorage.setItem('subeg_projects_data', JSON.stringify(data));
-      } catch {}
-      return data;
+    const querySnapshot = await getDocs(collection(db, 'projects'));
+    if (querySnapshot.empty) {
+      const seeded = await seedInitialProjectsIfNeeded();
+      return category && category !== 'ALL' ? seeded.filter(p => p.category === category) : seeded;
     }
-  } catch (e) {
-    console.warn('API unavailable, falling back to cached projects dataset:', e);
-  }
+    const projects: (Project & { order?: number })[] = querySnapshot.docs.map(
+      d => ({ id: d.id, ...d.data() } as Project & { order?: number })
+    );
+    projects.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    try {
+      localStorage.setItem('subeg_projects_data', JSON.stringify(projects));
+    } catch {}
 
-  const local = localStorage.getItem('subeg_projects_data');
-  const allProjects: Project[] = local ? JSON.parse(local) : initialProjects;
-  return category && category !== 'ALL'
-    ? allProjects.filter(p => p.category === category)
-    : allProjects;
+    return category && category !== 'ALL' ? projects.filter(p => p.category === category) : projects;
+  } catch (err) {
+    console.warn('Firestore fetch projects error, using cached data:', err);
+    const local = localStorage.getItem('subeg_projects_data');
+    const allProjects: Project[] = local ? JSON.parse(local) : initialProjects;
+    return category && category !== 'ALL' ? allProjects.filter(p => p.category === category) : allProjects;
+  }
 }
 
 export async function fetchProjectByIdOrSlug(idOrSlug: string): Promise<Project> {
   try {
-    const res = await fetch(`/api/projects/${idOrSlug}`, {
-      credentials: 'include',
-      headers: getAuthHeaders()
-    });
-    const ct = res.headers.get('content-type') || '';
-    if (res.ok && ct.includes('application/json')) {
-      return await res.json();
+    const docRef = doc(db, 'projects', idOrSlug);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return { id: docSnap.id, ...docSnap.data() } as Project;
     }
-  } catch (e) {
-    console.warn('API unavailable, falling back to static project details:', e);
-  }
+  } catch {}
 
-  const allProjects = await fetchProjects();
-  const found = allProjects.find(p => p.id === idOrSlug || p.slug === idOrSlug);
+  const all = await fetchProjects();
+  const found = all.find(p => p.id === idOrSlug || p.slug === idOrSlug);
   if (found) return found;
   throw new Error('Project not found');
 }
 
+// Subscribe to About data real-time
+export function subscribeAboutData(callback: (about: AboutData) => void) {
+  const docRef = doc(db, 'about', 'main');
+  return onSnapshot(
+    docRef,
+    async docSnap => {
+      if (!docSnap.exists()) {
+        await setDoc(docRef, initialAboutData);
+        callback(initialAboutData);
+        return;
+      }
+      callback(docSnap.data() as AboutData);
+    },
+    () => {
+      const local = localStorage.getItem('subeg_about_data');
+      callback(local ? JSON.parse(local) : initialAboutData);
+    }
+  );
+}
+
 export async function fetchAboutData(): Promise<AboutData> {
   try {
-    const res = await fetch('/api/about', {
-      credentials: 'include',
-      headers: getAuthHeaders()
-    });
-    const ct = res.headers.get('content-type') || '';
-    if (res.ok && ct.includes('application/json')) {
-      const data: AboutData = await res.json();
+    const docRef = doc(db, 'about', 'main');
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data() as AboutData;
       try {
         localStorage.setItem('subeg_about_data', JSON.stringify(data));
       } catch {}
       return data;
+    } else {
+      await setDoc(docRef, initialAboutData);
+      return initialAboutData;
     }
-  } catch (e) {
-    console.warn('API unavailable, falling back to cached about data:', e);
+  } catch {
+    const local = localStorage.getItem('subeg_about_data');
+    return local ? JSON.parse(local) : initialAboutData;
   }
+}
 
-  const local = localStorage.getItem('subeg_about_data');
-  if (local) {
-    try {
-      return JSON.parse(local);
-    } catch {}
-  }
-  return initialAboutData;
+// Subscribe to Contact data real-time
+export function subscribeContactData(callback: (contact: ContactData) => void) {
+  const docRef = doc(db, 'contact', 'main');
+  return onSnapshot(
+    docRef,
+    async docSnap => {
+      if (!docSnap.exists()) {
+        await setDoc(docRef, initialContactData);
+        callback(initialContactData);
+        return;
+      }
+      callback(docSnap.data() as ContactData);
+    },
+    () => {
+      const local = localStorage.getItem('subeg_contact_data');
+      callback(local ? JSON.parse(local) : initialContactData);
+    }
+  );
 }
 
 export async function fetchContactData(): Promise<ContactData> {
   try {
-    const res = await fetch('/api/contact', {
-      credentials: 'include',
-      headers: getAuthHeaders()
-    });
-    const ct = res.headers.get('content-type') || '';
-    if (res.ok && ct.includes('application/json')) {
-      const data: ContactData = await res.json();
+    const docRef = doc(db, 'contact', 'main');
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data() as ContactData;
       try {
         localStorage.setItem('subeg_contact_data', JSON.stringify(data));
       } catch {}
       return data;
+    } else {
+      await setDoc(docRef, initialContactData);
+      return initialContactData;
     }
-  } catch (e) {
-    console.warn('API unavailable, falling back to cached contact data:', e);
+  } catch {
+    const local = localStorage.getItem('subeg_contact_data');
+    return local ? JSON.parse(local) : initialContactData;
   }
+}
 
-  const local = localStorage.getItem('subeg_contact_data');
-  if (local) {
-    try {
-      return JSON.parse(local);
-    } catch {}
-  }
-  return initialContactData;
+// Subscribe to Settings real-time
+export function subscribeSiteSettings(callback: (settings: SiteSettings) => void) {
+  const docRef = doc(db, 'settings', 'main');
+  return onSnapshot(
+    docRef,
+    async docSnap => {
+      if (!docSnap.exists()) {
+        await setDoc(docRef, initialSiteSettings);
+        callback(initialSiteSettings);
+        return;
+      }
+      callback(docSnap.data() as SiteSettings);
+    },
+    () => {
+      const local = localStorage.getItem('subeg_site_settings');
+      callback(local ? JSON.parse(local) : initialSiteSettings);
+    }
+  );
 }
 
 export async function fetchSiteSettings(): Promise<SiteSettings> {
   try {
-    const res = await fetch('/api/settings', {
-      credentials: 'include',
-      headers: getAuthHeaders()
-    });
-    const ct = res.headers.get('content-type') || '';
-    if (res.ok && ct.includes('application/json')) {
-      const data: SiteSettings = await res.json();
+    const docRef = doc(db, 'settings', 'main');
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data() as SiteSettings;
       try {
         localStorage.setItem('subeg_site_settings', JSON.stringify(data));
       } catch {}
       return data;
-    }
-  } catch (e) {
-    console.warn('API unavailable, falling back to cached site settings:', e);
-  }
-
-  const local = localStorage.getItem('subeg_site_settings');
-  if (local) {
-    try {
-      return JSON.parse(local);
-    } catch {}
-  }
-  return initialSiteSettings;
-}
-
-// Admin API
-export async function checkAdminAuth(): Promise<boolean> {
-  try {
-    const res = await fetch('/api/admin/me', {
-      credentials: 'include',
-      headers: getAuthHeaders()
-    });
-    const ct = res.headers.get('content-type') || '';
-    if (res.ok && ct.includes('application/json')) {
-      const data = await res.json();
-      return Boolean(data.authenticated);
+    } else {
+      await setDoc(docRef, initialSiteSettings);
+      return initialSiteSettings;
     }
   } catch {
-    // Static host fallback
+    const local = localStorage.getItem('subeg_site_settings');
+    return local ? JSON.parse(local) : initialSiteSettings;
   }
+}
 
+// Admin Auth
+export async function checkAdminAuth(): Promise<boolean> {
   const token = getAdminToken();
   return Boolean(token && token.length > 0);
 }
 
 export async function adminLogin(password: string): Promise<{ success: boolean; token?: string; error?: string }> {
-  try {
-    const res = await fetch('/api/admin/login', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password })
-    });
-    const ct = res.headers.get('content-type') || '';
-    if (res.ok && ct.includes('application/json')) {
-      const data = await res.json();
-      if (data.success && data.token) {
-        setAdminToken(data.token);
-      }
-      return data;
-    }
-  } catch {
-    // API server unavailable
-  }
-
   if (password === 'subeg2026') {
     const token = DEFAULT_ADMIN_TOKEN;
     setAdminToken(token);
@@ -211,266 +275,286 @@ export async function adminLogin(password: string): Promise<{ success: boolean; 
 
 export async function adminLogout(): Promise<void> {
   setAdminToken('');
-  try {
-    await fetch('/api/admin/logout', {
-      method: 'POST',
-      credentials: 'include',
-      headers: getAuthHeaders()
-    });
-  } catch {
-    // Static host
-  }
 }
 
+// Save or Update Project directly in Firestore
 export async function saveProjectApi(project: Partial<Project>): Promise<Project> {
-  const isEdit = Boolean(project.id);
-  const url = isEdit ? `/api/projects/${project.id}` : '/api/projects';
-  const method = isEdit ? 'PUT' : 'POST';
+  const id = project.id || `proj_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+  const fullProject: Project = {
+    id,
+    title: project.title || 'Untitled Project',
+    slug: project.slug || id,
+    category: project.category || 'PROJECTION DESIGN',
+    year: project.year || new Date().getFullYear().toString(),
+    role: project.role || 'Projection Designer',
+    medium: project.medium || '',
+    shortDescription: project.shortDescription || '',
+    longDescription: project.longDescription || '',
+    heroMedia: project.heroMedia || '',
+    hoverMedia: project.hoverMedia || '',
+    gallery: project.gallery || [],
+    videos: project.videos || [],
+    tools: project.tools || [],
+    credits: project.credits || [],
+    featured: Boolean(project.featured),
+    published: project.published ?? true,
+    sortOrder: project.sortOrder ?? 0,
+    createdAt: project.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
 
-  const res = await fetch(url, {
-    method,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...getAuthHeaders()
-    },
-    body: JSON.stringify(project)
-  });
-
-  const ct = res.headers.get('content-type') || '';
-  if (res.ok && ct.includes('application/json')) {
-    const saved: Project = await res.json();
-    try {
-      const existingList: Project[] = JSON.parse(localStorage.getItem('subeg_projects_data') || '[]');
-      const idx = existingList.findIndex(p => p.id === saved.id);
-      if (idx !== -1) existingList[idx] = saved;
-      else existingList.push(saved);
-      localStorage.setItem('subeg_projects_data', JSON.stringify(existingList));
-    } catch {}
-    return saved;
+  try {
+    const docRef = doc(db, 'projects', id);
+    const docSnap = await getDoc(docRef);
+    const existingData = docSnap.exists() ? docSnap.data() : {};
+    await setDoc(docRef, { ...existingData, ...fullProject }, { merge: true });
+  } catch (err) {
+    console.error('Error saving project to Firestore:', err);
   }
 
-  const errText = await res.text().catch(() => '');
-  console.error('Server save project failed:', res.status, errText);
-  throw new Error(`Failed to save project on server (${res.status}): ${errText || 'Unauthorized or server error'}`);
+  // Local fallback cache update
+  try {
+    const existingList: Project[] = JSON.parse(localStorage.getItem('subeg_projects_data') || '[]');
+    const idx = existingList.findIndex(p => p.id === id);
+    if (idx !== -1) existingList[idx] = fullProject;
+    else existingList.push(fullProject);
+    localStorage.setItem('subeg_projects_data', JSON.stringify(existingList));
+  } catch {}
+
+  // Also notify server backend if express endpoint is accessible
+  try {
+    const isEdit = Boolean(project.id);
+    const url = isEdit ? `/api/projects/${id}` : '/api/projects';
+    const method = isEdit ? 'PUT' : 'POST';
+    await fetch(url, {
+      method,
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify(fullProject)
+    }).catch(() => {});
+  } catch {}
+
+  return fullProject;
 }
 
 export async function deleteProjectApi(id: string): Promise<void> {
-  const res = await fetch(`/api/projects/${id}`, {
-    method: 'DELETE',
-    credentials: 'include',
-    headers: getAuthHeaders()
-  });
-
-  if (res.ok) {
-    try {
-      const existingList: Project[] = JSON.parse(localStorage.getItem('subeg_projects_data') || '[]');
-      const filtered = existingList.filter(p => p.id !== id);
-      localStorage.setItem('subeg_projects_data', JSON.stringify(filtered));
-    } catch {}
-    return;
+  try {
+    await deleteDoc(doc(db, 'projects', id));
+  } catch (err) {
+    console.error('Error deleting project from Firestore:', err);
   }
 
-  const errText = await res.text().catch(() => '');
-  console.error('Server delete project failed:', res.status, errText);
-  throw new Error(`Failed to delete project on server (${res.status})`);
+  try {
+    const existingList: Project[] = JSON.parse(localStorage.getItem('subeg_projects_data') || '[]');
+    const filtered = existingList.filter(p => p.id !== id);
+    localStorage.setItem('subeg_projects_data', JSON.stringify(filtered));
+  } catch {}
+
+  try {
+    await fetch(`/api/projects/${id}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: getAuthHeaders()
+    }).catch(() => {});
+  } catch {}
 }
 
 export async function reorderProjectsApi(projectIds: string[]): Promise<void> {
-  const res = await fetch('/api/projects/reorder', {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...getAuthHeaders()
-    },
-    body: JSON.stringify({ projectIds })
-  });
-
-  if (res.ok) {
-    return;
+  try {
+    const batch = writeBatch(db);
+    projectIds.forEach((id, index) => {
+      const docRef = doc(db, 'projects', id);
+      batch.update(docRef, { order: index });
+    });
+    await batch.commit();
+  } catch (err) {
+    console.error('Error reordering projects in Firestore:', err);
   }
-
-  const errText = await res.text().catch(() => '');
-  console.error('Server reorder projects failed:', res.status, errText);
-  throw new Error(`Failed to reorder projects on server (${res.status})`);
 }
 
 export async function saveAboutApi(data: Partial<AboutData>): Promise<AboutData> {
-  const res = await fetch('/api/about', {
-    method: 'PUT',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...getAuthHeaders()
-    },
-    body: JSON.stringify(data)
-  });
+  const current = await fetchAboutData();
+  const updated: AboutData = { ...current, ...data };
 
-  const ct = res.headers.get('content-type') || '';
-  if (res.ok && ct.includes('application/json')) {
-    const result: AboutData = await res.json();
-    try {
-      localStorage.setItem('subeg_about_data', JSON.stringify(result));
-    } catch {}
-    return result;
+  try {
+    await setDoc(doc(db, 'about', 'main'), updated, { merge: true });
+  } catch (err) {
+    console.error('Error saving about data to Firestore:', err);
   }
 
-  const errText = await res.text().catch(() => '');
-  console.error('Server save about failed:', res.status, errText);
-  throw new Error(`Failed to save about data on server (${res.status})`);
+  try {
+    localStorage.setItem('subeg_about_data', JSON.stringify(updated));
+  } catch {}
+
+  try {
+    await fetch('/api/about', {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify(updated)
+    }).catch(() => {});
+  } catch {}
+
+  return updated;
 }
 
 export async function saveContactApi(data: Partial<ContactData>): Promise<ContactData> {
-  const res = await fetch('/api/contact', {
-    method: 'PUT',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...getAuthHeaders()
-    },
-    body: JSON.stringify(data)
-  });
+  const current = await fetchContactData();
+  const updated: ContactData = { ...current, ...data };
 
-  const ct = res.headers.get('content-type') || '';
-  if (res.ok && ct.includes('application/json')) {
-    const result: ContactData = await res.json();
-    try {
-      localStorage.setItem('subeg_contact_data', JSON.stringify(result));
-    } catch {}
-    return result;
+  try {
+    await setDoc(doc(db, 'contact', 'main'), updated, { merge: true });
+  } catch (err) {
+    console.error('Error saving contact data to Firestore:', err);
   }
 
-  const errText = await res.text().catch(() => '');
-  console.error('Server save contact failed:', res.status, errText);
-  throw new Error(`Failed to save contact data on server (${res.status})`);
+  try {
+    localStorage.setItem('subeg_contact_data', JSON.stringify(updated));
+  } catch {}
+
+  try {
+    await fetch('/api/contact', {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify(updated)
+    }).catch(() => {});
+  } catch {}
+
+  return updated;
 }
 
 export async function saveSettingsApi(data: Partial<SiteSettings>): Promise<SiteSettings> {
-  const res = await fetch('/api/settings', {
-    method: 'PUT',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...getAuthHeaders()
-    },
-    body: JSON.stringify(data)
-  });
+  const current = await fetchSiteSettings();
+  const updated: SiteSettings = { ...current, ...data };
 
-  const ct = res.headers.get('content-type') || '';
-  if (res.ok && ct.includes('application/json')) {
-    const result: SiteSettings = await res.json();
-    try {
-      localStorage.setItem('subeg_site_settings', JSON.stringify(result));
-    } catch {}
-    return result;
+  try {
+    await setDoc(doc(db, 'settings', 'main'), updated, { merge: true });
+  } catch (err) {
+    console.error('Error saving settings to Firestore:', err);
   }
 
-  const errText = await res.text().catch(() => '');
-  console.error('Server save settings failed:', res.status, errText);
-  throw new Error(`Failed to save settings on server (${res.status})`);
+  try {
+    localStorage.setItem('subeg_site_settings', JSON.stringify(updated));
+  } catch {}
+
+  try {
+    await fetch('/api/settings', {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify(updated)
+    }).catch(() => {});
+  } catch {}
+
+  return updated;
 }
 
 export async function fetchMediaApi(): Promise<MediaItem[]> {
   try {
-    const res = await fetch('/api/media', {
-      credentials: 'include',
-      headers: getAuthHeaders()
-    });
-    const ct = res.headers.get('content-type') || '';
-    if (res.ok && ct.includes('application/json')) {
-      const data: MediaItem[] = await res.json();
-      try {
-        localStorage.setItem('subeg_media_items', JSON.stringify(data));
-      } catch {}
-      return data;
-    }
-  } catch (e) {
-    console.warn('API unavailable, returning media list from cache:', e);
+    const querySnapshot = await getDocs(collection(db, 'media'));
+    const mediaItems: MediaItem[] = querySnapshot.docs.map(
+      d => ({ id: d.id, ...d.data() } as MediaItem)
+    );
+    mediaItems.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+    return mediaItems;
+  } catch {
+    const local = localStorage.getItem('subeg_media_items');
+    return local ? JSON.parse(local) : [];
   }
-
-  return JSON.parse(localStorage.getItem('subeg_media_items') || '[]');
 }
 
 export async function uploadMediaApi(file: File): Promise<MediaItem> {
-  const formData = new FormData();
-  formData.append('file', file);
+  // Try server upload first if express is running
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch('/api/media/upload', {
+      method: 'POST',
+      credentials: 'include',
+      headers: getAuthHeaders(),
+      body: formData
+    });
+    const ct = res.headers.get('content-type') || '';
+    if (res.ok && ct.includes('application/json')) {
+      const serverItem: MediaItem = await res.json();
+      await setDoc(doc(db, 'media', serverItem.id), serverItem, { merge: true }).catch(() => {});
+      return serverItem;
+    }
+  } catch {}
 
-  const res = await fetch('/api/media/upload', {
-    method: 'POST',
-    credentials: 'include',
-    headers: getAuthHeaders(),
-    body: formData
-  });
+  // Portable Data URL mode for static hosting (e.g. GitHub Pages):
+  // Converts image to Data URL so it is stored in Firestore and renders anywhere on mobile/web globally!
+  const dataUrl = await fileToDataUrl(file);
+  const mediaId = `media_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+  const mediaItem: MediaItem = {
+    id: mediaId,
+    filename: file.name,
+    originalName: file.name,
+    url: dataUrl,
+    mimeType: file.type || (file.name.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg'),
+    uploadedAt: new Date().toISOString(),
+    size: file.size
+  };
 
-  const ct = res.headers.get('content-type') || '';
-  if (res.ok && ct.includes('application/json')) {
-    const mediaItem: MediaItem = await res.json();
-    try {
-      const existing: MediaItem[] = JSON.parse(localStorage.getItem('subeg_media_items') || '[]');
-      existing.unshift(mediaItem);
-      localStorage.setItem('subeg_media_items', JSON.stringify(existing));
-    } catch {}
-    return mediaItem;
+  try {
+    await setDoc(doc(db, 'media', mediaId), mediaItem);
+  } catch (err) {
+    console.error('Error saving media item to Firestore:', err);
   }
 
-  const errText = await res.text().catch(() => '');
-  console.error('Server upload media failed:', res.status, errText);
-  throw new Error(`Failed to upload media file on server (${res.status}): ${errText || res.statusText}`);
+  try {
+    const existing: MediaItem[] = JSON.parse(localStorage.getItem('subeg_media_items') || '[]');
+    existing.unshift(mediaItem);
+    localStorage.setItem('subeg_media_items', JSON.stringify(existing));
+  } catch {}
+
+  return mediaItem;
 }
 
-export async function deleteMediaApi(filename: string): Promise<void> {
-  const res = await fetch(`/api/media/${filename}`, {
-    method: 'DELETE',
-    credentials: 'include',
-    headers: getAuthHeaders()
-  });
+export async function deleteMediaApi(filenameOrId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'media', filenameOrId));
+  } catch {}
 
-  if (res.ok) {
-    try {
-      const existing = JSON.parse(localStorage.getItem('subeg_media_items') || '[]');
-      const filtered = existing.filter((m: MediaItem) => m.filename !== filename);
-      localStorage.setItem('subeg_media_items', JSON.stringify(filtered));
-    } catch {}
-    return;
-  }
+  try {
+    const existing: MediaItem[] = JSON.parse(localStorage.getItem('subeg_media_items') || '[]');
+    const filtered = existing.filter(m => m.id !== filenameOrId && m.filename !== filenameOrId);
+    localStorage.setItem('subeg_media_items', JSON.stringify(filtered));
+  } catch {}
 
-  const errText = await res.text().catch(() => '');
-  console.error('Server delete media failed:', res.status, errText);
-  throw new Error(`Failed to delete media file on server (${res.status})`);
+  try {
+    await fetch(`/api/media/${filenameOrId}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: getAuthHeaders()
+    }).catch(() => {});
+  } catch {}
 }
 
 export async function uploadCvApi(file: File): Promise<{ cvUrl: string }> {
-  const formData = new FormData();
-  formData.append('cvFile', file);
-
-  const res = await fetch('/api/cv/upload', {
-    method: 'POST',
-    credentials: 'include',
-    headers: getAuthHeaders(),
-    body: formData
-  });
-
-  const ct = res.headers.get('content-type') || '';
-  if (res.ok && ct.includes('application/json')) {
-    return await res.json();
+  try {
+    const dataUrl = await fileToDataUrl(file);
+    await saveAboutApi({ cvUrl: dataUrl });
+    return { cvUrl: dataUrl };
+  } catch {
+    throw new Error('Failed to upload CV file');
   }
-
-  const errText = await res.text().catch(() => '');
-  console.error('Server upload CV failed:', res.status, errText);
-  throw new Error(`Failed to upload CV file on server (${res.status})`);
 }
 
 export async function resetDemoDataApi(): Promise<void> {
   try {
-    const res = await fetch('/api/settings/reset-demo', {
-      method: 'POST',
-      credentials: 'include',
-      headers: getAuthHeaders()
+    const batch = writeBatch(db);
+    initialProjects.forEach((proj, idx) => {
+      const docRef = doc(db, 'projects', proj.id);
+      batch.set(docRef, { ...proj, order: idx });
     });
-    if (res.ok) return;
-  } catch (e) {
-    console.warn('API unavailable, clearing local storage for store reset:', e);
+    batch.set(doc(db, 'about', 'main'), initialAboutData);
+    batch.set(doc(db, 'contact', 'main'), initialContactData);
+    batch.set(doc(db, 'settings', 'main'), initialSiteSettings);
+    await batch.commit();
+  } catch (err) {
+    console.error('Error resetting demo data in Firestore:', err);
   }
 
   localStorage.removeItem('subeg_projects_data');

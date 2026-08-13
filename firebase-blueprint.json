@@ -1,0 +1,102 @@
+{
+  "entities": {
+    "projects": {
+      "title": "Projects",
+      "description": "Portfolio projects collection",
+      "type": "collection",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "slug": { "type": "string" },
+          "category": { "type": "string" },
+          "year": { "type": "string" },
+          "role": { "type": "string" },
+          "medium": { "type": "string" },
+          "shortDescription": { "type": "string" },
+          "longDescription": { "type": "string" },
+          "heroMedia": { "type": "string" },
+          "hoverMedia": { "type": "string" },
+          "gallery": { "type": "array", "items": { "type": "string" } },
+          "videos": { "type": "array", "items": { "type": "string" } },
+          "tools": { "type": "array", "items": { "type": "string" } },
+          "credits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": { "type": "string" },
+                "name": { "type": "string" }
+              }
+            }
+          },
+          "featured": { "type": "boolean" },
+          "published": { "type": "boolean" },
+          "order": { "type": "number" }
+        }
+      }
+    },
+    "about": {
+      "title": "About Data",
+      "description": "About section bio and information",
+      "type": "collection",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "bio": { "type": "string" },
+          "statement": { "type": "string" },
+          "experience": { "type": "array", "items": { "type": "object" } },
+          "skills": { "type": "array", "items": { "type": "string" } },
+          "exhibitions": { "type": "array", "items": { "type": "object" } }
+        }
+      }
+    },
+    "contact": {
+      "title": "Contact Data",
+      "description": "Contact info and social links",
+      "type": "collection",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string" },
+          "location": { "type": "string" },
+          "socialLinks": { "type": "array", "items": { "type": "object" } },
+          "availability": { "type": "string" }
+        }
+      }
+    },
+    "settings": {
+      "title": "Site Settings",
+      "description": "Global portfolio configuration and CV url",
+      "type": "collection",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "siteTitle": { "type": "string" },
+          "metaDescription": { "type": "string" },
+          "heroHeading": { "type": "string" },
+          "heroSubheading": { "type": "string" },
+          "cvUrl": { "type": "string" },
+          "footerText": { "type": "string" }
+        }
+      }
+    },
+    "media": {
+      "title": "Media Assets",
+      "description": "Uploaded media library items",
+      "type": "collection",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "filename": { "type": "string" },
+          "url": { "type": "string" },
+          "type": { "type": "string" },
+          "uploadedAt": { "type": "string" },
+          "size": { "type": "number" }
+        }
+      }
+    }
+  }
+}

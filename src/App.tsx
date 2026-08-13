@@ -6,7 +6,11 @@ import {
   fetchAboutData,
   fetchContactData,
   fetchProjects,
-  fetchSiteSettings
+  fetchSiteSettings,
+  subscribeAboutData,
+  subscribeContactData,
+  subscribeProjects,
+  subscribeSiteSettings
 } from './lib/api';
 import { ImmersiveBackground } from './components/ImmersiveBackground';
 import { HeaderNav } from './components/HeaderNav';
@@ -77,8 +81,22 @@ export default function App() {
   };
 
   useEffect(() => {
-    loadPublicData();
     verifyAdminStatus();
+
+    const unsubProjects = subscribeProjects(data => {
+      setProjects(data);
+      setLoading(false);
+    });
+    const unsubAbout = subscribeAboutData(data => setAbout(data));
+    const unsubContact = subscribeContactData(data => setContact(data));
+    const unsubSettings = subscribeSiteSettings(data => setSettings(data));
+
+    return () => {
+      unsubProjects();
+      unsubAbout();
+      unsubContact();
+      unsubSettings();
+    };
   }, []);
 
   useEffect(() => {
