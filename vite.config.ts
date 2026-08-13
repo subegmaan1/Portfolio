@@ -6,7 +6,7 @@ import {defineConfig} from 'vite';
 export default defineConfig(() => {
   // Use repository name base path for GitHub Pages deployments (e.g. /Portfolio/)
   const repoName = process.env.GITHUB_REPOSITORY ? process.env.GITHUB_REPOSITORY.split('/')[1] : null;
-  const base = repoName ? `/${repoName}/` : './';
+  const base = repoName ? `/${repoName}/` : '/';
 
   return {
     base,
@@ -15,6 +15,10 @@ export default defineConfig(() => {
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
+    },
+    build: {
+      outDir: 'dist',
+      emptyOutDir: true,
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.

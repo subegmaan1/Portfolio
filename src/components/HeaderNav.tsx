@@ -8,6 +8,7 @@ interface HeaderNavProps {
   onSelectSection: (section: PublicNavSection) => void;
   onOpenAdmin: () => void;
   isAdminLoggedIn: boolean;
+  about?: { name: string; title: string } | null;
 }
 
 const NAV_ITEMS: { id: PublicNavSection; num: string; label: string }[] = [
@@ -21,7 +22,8 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
   activeSection,
   onSelectSection,
   onOpenAdmin,
-  isAdminLoggedIn
+  isAdminLoggedIn,
+  about
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -49,11 +51,11 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
             id="nav-brand-button"
           >
             <div className="flex flex-col">
-              <span className="font-syne font-extrabold text-sm sm:text-base tracking-[0.15em] text-neutral-100 group-hover:text-white transition-colors">
-                SUBEG SINGH
+              <span className="font-syne font-extrabold text-sm sm:text-base tracking-[0.15em] text-neutral-100 group-hover:text-white transition-colors uppercase">
+                {about?.name || 'SUBEG SINGH'}
               </span>
-              <span className="text-[9px] font-mono text-teal-400/90 tracking-[0.2em] uppercase font-semibold group-hover:text-teal-300 transition-colors">
-                IMMERSIVE MEDIA DESIGNER
+              <span className="text-[9px] font-mono text-teal-400/90 tracking-[0.2em] uppercase font-semibold group-hover:text-teal-300 transition-colors line-clamp-1 max-w-[220px] sm:max-w-none">
+                {about?.title || 'IMMERSIVE MEDIA DESIGNER'}
               </span>
             </div>
           </button>

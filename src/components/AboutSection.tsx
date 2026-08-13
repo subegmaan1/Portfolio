@@ -1,10 +1,11 @@
 import React from 'react';
-import { AboutData } from '../types';
-import { FileDown } from 'lucide-react';
+import { AboutData, Project } from '../types';
+import { FileDown, ArrowUpRight } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface AboutSectionProps {
   about: AboutData;
+  projects?: Project[];
   onNavigateToSection: (section: 'PROJECTION DESIGN' | 'IMMERSIVE MEDIA' | 'CONTACT') => void;
 }
 
@@ -32,7 +33,23 @@ const itemVariants = {
   }
 };
 
-export const AboutSection: React.FC<AboutSectionProps> = ({ about, onNavigateToSection }) => {
+export const AboutSection: React.FC<AboutSectionProps> = ({ about, projects = [], onNavigateToSection }) => {
+  const projectionProjects = projects.filter(p => p.category === 'PROJECTION DESIGN' && p.published);
+  const immersiveProjects = projects.filter(p => p.category === 'IMMERSIVE MEDIA' && p.published);
+
+  const projCover1 =
+    projectionProjects[0]?.heroMedia ||
+    projectionProjects[0]?.hoverMedia ||
+    'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?auto=format&fit=crop&q=80&w=1200';
+
+  const projCover2 =
+    immersiveProjects[0]?.heroMedia ||
+    immersiveProjects[0]?.hoverMedia ||
+    'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=1200';
+  const [portraitTouched, setPortraitTouched] = React.useState(false);
+  const [card1Touched, setCard1Touched] = React.useState(false);
+  const [card2Touched, setCard2Touched] = React.useState(false);
+
   return (
     <motion.section
       variants={containerVariants}
@@ -110,12 +127,19 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ about, onNavigateToS
                 <div className="absolute inset-0 bg-gradient-to-b from-transparent via-teal-400/5 to-transparent -translate-y-full group-hover:translate-y-full transition-transform duration-1000 ease-in-out pointer-events-none z-10" />
 
                 {/* Image display */}
-                <div className="relative aspect-[3/4] w-full bg-neutral-900 overflow-hidden border border-white/5 rounded-sm">
+                <div
+                  onTouchStart={() => setPortraitTouched(true)}
+                  onTouchEnd={() => setTimeout(() => setPortraitTouched(false), 2500)}
+                  onClick={() => setPortraitTouched(prev => !prev)}
+                  className="relative aspect-[3/4] w-full bg-neutral-900 overflow-hidden border border-white/5 rounded-sm cursor-pointer select-none"
+                >
                   {about.photoUrl ? (
                     <img
                       src={about.photoUrl}
                       alt={about.name || 'Subeg Singh'}
-                      className="w-full h-full object-cover object-top grayscale group-hover:grayscale-0 contrast-125 transition-all duration-700 scale-100 group-hover:scale-105"
+                      className={`w-full h-full object-cover object-top contrast-125 transition-all duration-500 active:grayscale-0 group-active:grayscale-0 ${
+                        portraitTouched ? 'grayscale-0 scale-105' : 'grayscale group-hover:grayscale-0 group-hover:scale-105'
+                      }`}
                       referrerPolicy="no-referrer"
                     />
                   ) : (
@@ -192,37 +216,133 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ about, onNavigateToS
         </div>
       </motion.div>
 
-      {/* Direct Navigators */}
-      <motion.div variants={itemVariants} className="pt-8 sm:pt-12 mt-8 sm:mt-12 border-t border-white/[0.06] grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-        <button
+      {/* Big Practice Feature Cards */}
+      <motion.div variants={itemVariants} className="pt-8 sm:pt-12 mt-8 sm:mt-12 border-t border-white/[0.06] grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
+        {/* Big Card 1: Projection Design */}
+        <div
           onClick={() => onNavigateToSection('PROJECTION DESIGN')}
-          className="group text-left p-6 sm:p-8 bg-white/[0.02] border border-white/[0.06] hover:border-teal-500/40 transition-all duration-300 flex justify-between items-center"
-          id="goto-projection-design-btn"
+          className="group relative cursor-pointer overflow-hidden rounded-sm border border-white/10 hover:border-teal-500/60 transition-all duration-500 bg-neutral-950/90 shadow-2xl flex flex-col justify-between min-h-[340px] sm:min-h-[400px] p-6 sm:p-8"
+          id="goto-projection-design-card"
         >
-          <div>
-            <span className="font-mono text-[10px] text-teal-400/80 uppercase tracking-[0.2em] block mb-1">
-              Primary Practice
-            </span>
-            <span className="font-syne font-bold text-lg sm:text-xl text-neutral-100 group-hover:text-white uppercase tracking-wider">
-              Projection Design &rarr;
-            </span>
+          {/* Background Media Image */}
+          <div
+            onTouchStart={() => setCard1Touched(true)}
+            onTouchEnd={() => setTimeout(() => setCard1Touched(false), 2000)}
+            className="absolute inset-0 z-0 overflow-hidden"
+          >
+            <img
+              src={projCover1}
+              alt="Projection Design"
+              className={`w-full h-full object-cover object-center transition-all duration-700 active:grayscale-0 group-active:grayscale-0 ${
+                card1Touched
+                  ? 'grayscale-0 opacity-60 scale-105'
+                  : 'grayscale group-hover:grayscale-0 group-hover:scale-105 opacity-30 group-hover:opacity-50'
+              }`}
+              referrerPolicy="no-referrer"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0c] via-[#0a0a0c]/80 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#0a0a0c]/90 via-transparent to-transparent" />
           </div>
-        </button>
 
-        <button
-          onClick={() => onNavigateToSection('IMMERSIVE MEDIA')}
-          className="group text-left p-6 sm:p-8 bg-white/[0.02] border border-white/[0.06] hover:border-teal-500/40 transition-all duration-300 flex justify-between items-center"
-          id="goto-immersive-media-btn"
-        >
-          <div>
-            <span className="font-mono text-[10px] text-teal-400/80 uppercase tracking-[0.2em] block mb-1">
-              Secondary Practice
+          {/* Crosshair corner accents */}
+          <span className="absolute top-3 left-3 font-mono text-[10px] text-teal-400/60 z-10 select-none">+</span>
+          <span className="absolute top-3 right-3 font-mono text-[10px] text-teal-400/60 z-10 select-none">+</span>
+
+          {/* Top Header Metadata */}
+          <div className="relative z-10 flex items-center justify-between">
+            <span className="font-mono text-[10px] tracking-[0.25em] text-teal-400 uppercase font-bold bg-teal-950/80 border border-teal-500/30 px-3 py-1 rounded-full backdrop-blur-md">
+              PRIMARY PRACTICE &bull; 01
             </span>
-            <span className="font-syne font-bold text-lg sm:text-xl text-neutral-100 group-hover:text-white uppercase tracking-wider">
-              Immersive Media &rarr;
+            <span className="font-mono text-[10px] tracking-wider text-white/70 bg-white/10 border border-white/10 px-2.5 py-1 rounded-sm uppercase backdrop-blur-md">
+              {projectionProjects.length} {projectionProjects.length === 1 ? 'PROJECT' : 'PROJECTS'}
             </span>
           </div>
-        </button>
+
+          {/* Bottom Card Info & CTA */}
+          <div className="relative z-10 mt-auto pt-16 space-y-4">
+            <div>
+              <h3 className="font-syne font-extrabold text-3xl sm:text-4xl text-white group-hover:text-teal-300 transition-colors uppercase tracking-tight leading-tight">
+                PROJECTION DESIGN
+              </h3>
+              <p className="font-mono text-xs text-neutral-300 mt-2 line-clamp-2 leading-relaxed font-light">
+                Digital Scenography &bull; Architectural Mapping &bull; LED Visual Systems &bull; Live Scenography
+              </p>
+            </div>
+
+            <div className="pt-3 flex items-center justify-between border-t border-white/10">
+              <span className="font-mono text-[11px] text-teal-400 uppercase tracking-widest font-semibold group-hover:translate-x-1 transition-transform flex items-center space-x-2">
+                <span>EXPLORE COLLECTION</span>
+                <span>&rarr;</span>
+              </span>
+              <div className="w-10 h-10 rounded-full border border-white/20 group-hover:border-teal-400 group-hover:bg-teal-400 group-hover:text-neutral-950 text-white flex items-center justify-center transition-all duration-300">
+                <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Big Card 2: Immersive Media */}
+        <div
+          onClick={() => onNavigateToSection('IMMERSIVE MEDIA')}
+          className="group relative cursor-pointer overflow-hidden rounded-sm border border-white/10 hover:border-sky-500/60 transition-all duration-500 bg-neutral-950/90 shadow-2xl flex flex-col justify-between min-h-[340px] sm:min-h-[400px] p-6 sm:p-8"
+          id="goto-immersive-media-card"
+        >
+          {/* Background Media Image */}
+          <div
+            onTouchStart={() => setCard2Touched(true)}
+            onTouchEnd={() => setTimeout(() => setCard2Touched(false), 2000)}
+            className="absolute inset-0 z-0 overflow-hidden"
+          >
+            <img
+              src={projCover2}
+              alt="Immersive Media"
+              className={`w-full h-full object-cover object-center transition-all duration-700 active:grayscale-0 group-active:grayscale-0 ${
+                card2Touched
+                  ? 'grayscale-0 opacity-60 scale-105'
+                  : 'grayscale group-hover:grayscale-0 group-hover:scale-105 opacity-30 group-hover:opacity-50'
+              }`}
+              referrerPolicy="no-referrer"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0c] via-[#0a0a0c]/80 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#0a0a0c]/90 via-transparent to-transparent" />
+          </div>
+
+          {/* Crosshair corner accents */}
+          <span className="absolute top-3 left-3 font-mono text-[10px] text-sky-400/60 z-10 select-none">+</span>
+          <span className="absolute top-3 right-3 font-mono text-[10px] text-sky-400/60 z-10 select-none">+</span>
+
+          {/* Top Header Metadata */}
+          <div className="relative z-10 flex items-center justify-between">
+            <span className="font-mono text-[10px] tracking-[0.25em] text-sky-400 uppercase font-bold bg-sky-950/80 border border-sky-500/30 px-3 py-1 rounded-full backdrop-blur-md">
+              SECONDARY PRACTICE &bull; 02
+            </span>
+            <span className="font-mono text-[10px] tracking-wider text-white/70 bg-white/10 border border-white/10 px-2.5 py-1 rounded-sm uppercase backdrop-blur-md">
+              {immersiveProjects.length} {immersiveProjects.length === 1 ? 'PROJECT' : 'PROJECTS'}
+            </span>
+          </div>
+
+          {/* Bottom Card Info & CTA */}
+          <div className="relative z-10 mt-auto pt-16 space-y-4">
+            <div>
+              <h3 className="font-syne font-extrabold text-3xl sm:text-4xl text-white group-hover:text-sky-300 transition-colors uppercase tracking-tight leading-tight">
+                IMMERSIVE MEDIA
+              </h3>
+              <p className="font-mono text-xs text-neutral-300 mt-2 line-clamp-2 leading-relaxed font-light">
+                Virtual Production &bull; Interactive Environments &bull; Real-Time Systems &bull; Spatial Computing
+              </p>
+            </div>
+
+            <div className="pt-3 flex items-center justify-between border-t border-white/10">
+              <span className="font-mono text-[11px] text-sky-400 uppercase tracking-widest font-semibold group-hover:translate-x-1 transition-transform flex items-center space-x-2">
+                <span>EXPLORE COLLECTION</span>
+                <span>&rarr;</span>
+              </span>
+              <div className="w-10 h-10 rounded-full border border-white/20 group-hover:border-sky-400 group-hover:bg-sky-400 group-hover:text-neutral-950 text-white flex items-center justify-center transition-all duration-300">
+                <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+              </div>
+            </div>
+          </div>
+        </div>
       </motion.div>
 
       {/* Footer System Info */}

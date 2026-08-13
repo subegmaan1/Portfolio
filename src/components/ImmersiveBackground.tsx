@@ -200,23 +200,37 @@ export const ImmersiveBackground: React.FC<ImmersiveBackgroundProps> = ({ active
     const mesh = new THREE.Mesh(geometry, material);
     scene.add(mesh);
 
-    const handlePointerMove = (e: MouseEvent | TouchEvent) => {
-      let clientX = 0;
-      let clientY = 0;
-      if ('touches' in e && e.touches.length > 0) {
+    let isTouchInteraction = false;
+
+    const handlePointerMove = (e: MouseEvent | TouchEvent | PointerEvent) => {
+      let clientX = -1;
+      let clientY = -1;
+
+      if ('touches' in e && e.touches && e.touches.length > 0) {
         clientX = e.touches[0].clientX;
         clientY = e.touches[0].clientY;
-      } else if ('clientX' in e) {
+        isTouchInteraction = true;
+      } else if ('targetTouches' in e && (e as TouchEvent).targetTouches && (e as TouchEvent).targetTouches.length > 0) {
+        clientX = (e as TouchEvent).targetTouches[0].clientX;
+        clientY = (e as TouchEvent).targetTouches[0].clientY;
+        isTouchInteraction = true;
+      } else if ('clientX' in e && typeof e.clientX === 'number') {
         clientX = (e as MouseEvent).clientX;
         clientY = (e as MouseEvent).clientY;
       }
-      mousePos.current.targetX = clientX / window.innerWidth;
-      mousePos.current.targetY = 1.0 - (clientY / window.innerHeight);
+
+      if (clientX >= 0 && clientY >= 0) {
+        mousePos.current.targetX = clientX / window.innerWidth;
+        mousePos.current.targetY = 1.0 - (clientY / window.innerHeight);
+      }
     };
 
-    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mousemove', handlePointerMove, { passive: true });
+    window.addEventListener('pointermove', handlePointerMove, { passive: true });
+    window.addEventListener('pointerdown', handlePointerMove, { passive: true });
     window.addEventListener('touchmove', handlePointerMove, { passive: true });
     window.addEventListener('touchstart', handlePointerMove, { passive: true });
+    document.addEventListener('touchmove', handlePointerMove, { passive: true });
 
     const handleResize = () => {
       renderer.setSize(window.innerWidth, window.innerHeight);
@@ -233,9 +247,10 @@ export const ImmersiveBackground: React.FC<ImmersiveBackgroundProps> = ({ active
 
       const elapsedTime = clock.getElapsedTime();
 
-      // Silky responsive mouse lerp
-      mousePos.current.x += (mousePos.current.targetX - mousePos.current.x) * 0.1;
-      mousePos.current.y += (mousePos.current.targetY - mousePos.current.y) * 0.1;
+      // Silky responsive mouse/touch lerp (faster response on touch)
+      const lerpSpeed = isTouchInteraction ? 0.25 : 0.12;
+      mousePos.current.x += (mousePos.current.targetX - mousePos.current.x) * lerpSpeed;
+      mousePos.current.y += (mousePos.current.targetY - mousePos.current.y) * lerpSpeed;
       uniforms.uMouse.value.set(mousePos.current.x, mousePos.current.y);
 
       if (!prefersReducedMotion) {

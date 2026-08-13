@@ -115,7 +115,7 @@ export const ImmersiveMediaSection: React.FC<ImmersiveMediaSectionProps> = ({
                   <img
                     src={proj.hoverMedia || proj.heroMedia}
                     alt={proj.title}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover grayscale active:grayscale-0 group-active:grayscale-0 transition-all duration-300"
                     referrerPolicy="no-referrer"
                   />
                 </div>

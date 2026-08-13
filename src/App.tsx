@@ -33,16 +33,18 @@ import { AdminCVManager } from './admin/AdminCVManager';
 import { AdminContactEditor } from './admin/AdminContactEditor';
 import { AdminSettings } from './admin/AdminSettings';
 
+import { initialAboutData, initialContactData, initialProjects, initialSiteSettings } from './data/initial-store';
+
 export default function App() {
   // Public Section State (Default homepage is ABOUT)
   const [activeSection, setActiveSection] = useState<PublicNavSection>('ABOUT');
 
-  // Core Data Stores
-  const [about, setAbout] = useState<AboutData | null>(null);
-  const [contact, setContact] = useState<ContactData | null>(null);
-  const [settings, setSettings] = useState<SiteSettings | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  // Core Data Stores initialized with fallback defaults for instant rendering
+  const [about, setAbout] = useState<AboutData>(initialAboutData);
+  const [contact, setContact] = useState<ContactData>(initialContactData);
+  const [settings, setSettings] = useState<SiteSettings>(initialSiteSettings);
+  const [projects, setProjects] = useState<Project[]>(initialProjects);
+  const [loading, setLoading] = useState<boolean>(false);
 
   // Interaction States
   const [hoveredProject, setHoveredProject] = useState<Project | null>(null);
@@ -200,6 +202,7 @@ export default function App() {
         }}
         onOpenAdmin={handleOpenAdmin}
         isAdminLoggedIn={isAdminAuthenticated}
+        about={about}
       />
 
       {/* Cursor Floating Hover Media Preview */}
@@ -224,6 +227,7 @@ export default function App() {
               {activeSection === 'ABOUT' && (
                 <AboutSection
                   about={about}
+                  projects={projects}
                   onNavigateToSection={sec => {
                     setActiveSection(sec);
                     window.scrollTo({ top: 0, behavior: 'smooth' });
