@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Project, ProjectCategory } from '../types';
-import { saveProjectApi, uploadMediaApi } from '../lib/api';
+import { deleteProjectApi, saveProjectApi, uploadMediaApi } from '../lib/api';
 import { parseVideoUrl } from '../lib/videoUtils';
 import {
   ArrowLeft,
@@ -16,7 +16,8 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Star,
-  ArrowUpDown
+  ArrowUpDown,
+  AlertTriangle
 } from 'lucide-react';
 
 interface AdminProjectFormProps {
@@ -31,6 +32,8 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
   onSaveSuccess
 }) => {
   const isEditing = Boolean(initialProject?.id);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const [title, setTitle] = useState(initialProject?.title || '');
   const [slug, setSlug] = useState(initialProject?.slug || '');
@@ -816,23 +819,83 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
         </div>
 
         {/* Action buttons */}
-        <div className="flex justify-end space-x-4 pt-4">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-6 py-2.5 border border-neutral-800 text-neutral-300 hover:bg-neutral-800"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={saving}
-            className="px-8 py-2.5 bg-neutral-100 text-neutral-950 font-bold uppercase hover:bg-white disabled:opacity-50"
-          >
-            {saving ? 'Saving...' : 'Save Project'}
-          </button>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-neutral-850">
+          <div>
+            {isEditing && initialProject?.id && (
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(true)}
+                className="px-4 py-2.5 bg-red-950/40 border border-red-900/60 text-red-400 font-mono text-xs hover:bg-red-900/50 hover:text-red-300 transition-colors flex items-center space-x-2"
+                id="form-delete-project-btn"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Project</span>
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center space-x-4">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-6 py-2.5 border border-neutral-800 text-neutral-300 hover:bg-neutral-800 font-mono text-xs"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-8 py-2.5 bg-neutral-100 text-neutral-950 font-bold uppercase hover:bg-white disabled:opacity-50 font-mono text-xs tracking-wider flex items-center space-x-2"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>{saving ? 'Saving...' : 'Save Project'}</span>
+            </button>
+          </div>
         </div>
       </form>
+
+      {/* Delete Confirmation In-App Modal */}
+      {showDeleteConfirm && initialProject?.id && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 max-w-md w-full p-6 space-y-4 animate-scale-up font-mono">
+            <div className="flex items-center space-x-3 text-red-400">
+              <AlertTriangle className="w-6 h-6 shrink-0" />
+              <h3 className="font-syne font-bold text-lg text-neutral-100">Delete Project?</h3>
+            </div>
+            <p className="text-xs text-neutral-300 leading-relaxed font-sans">
+              Are you sure you want to permanently delete <strong className="text-white">"{title || initialProject.title}"</strong>? This will remove the project from both your portfolio and server database immediately.
+            </p>
+            <div className="flex justify-end space-x-3 pt-3 border-t border-neutral-800">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-4 py-2 border border-neutral-750 text-neutral-300 hover:bg-neutral-800 text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={async () => {
+                  setDeleting(true);
+                  try {
+                    await deleteProjectApi(initialProject.id!);
+                    onSaveSuccess();
+                  } catch (e) {
+                    setError('Failed to delete project');
+                    setDeleting(false);
+                    setShowDeleteConfirm(false);
+                  }
+                }}
+                className="px-5 py-2 bg-red-600 hover:bg-red-500 text-white font-bold text-xs uppercase tracking-wider disabled:opacity-50"
+              >
+                {deleting ? 'Deleting...' : 'Confirm Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

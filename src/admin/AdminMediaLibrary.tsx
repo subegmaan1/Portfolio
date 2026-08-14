@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { MediaItem } from '../types';
 import { deleteMediaApi, fetchMediaApi, uploadMediaApi } from '../lib/api';
 import { BatchPhotoProjectModal } from './BatchPhotoProjectModal';
-import { Upload, Trash2, Copy, Check, File, Image, Film, Layers } from 'lucide-react';
+import { Upload, Trash2, Copy, Check, File, Image, Film, Layers, Cloud, HardDrive, CheckCircle2 } from 'lucide-react';
 
 export const AdminMediaLibrary: React.FC = () => {
   const [mediaList, setMediaList] = useState<MediaItem[]>([]);
@@ -11,6 +11,7 @@ export const AdminMediaLibrary: React.FC = () => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'ALL' | 'IMAGE' | 'VIDEO' | 'OTHER'>('ALL');
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
+  const [storageStatus, setStorageStatus] = useState<{ cloudinaryConfigured: boolean; cloudName: string | null; storageMode: string } | null>(null);
 
   const loadMedia = async () => {
     setLoading(true);
@@ -26,6 +27,10 @@ export const AdminMediaLibrary: React.FC = () => {
 
   useEffect(() => {
     loadMedia();
+    fetch('/api/media/status')
+      .then(res => res.json())
+      .then(status => setStorageStatus(status))
+      .catch(() => {});
   }, []);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -77,9 +82,22 @@ export const AdminMediaLibrary: React.FC = () => {
           <h1 className="font-syne font-bold text-2xl lg:text-3xl text-neutral-100">
             MEDIA LIBRARY
           </h1>
-          <p className="font-mono text-xs text-neutral-400 mt-1">
-            Upload, manage & reference visual assets for case studies
-          </p>
+          <div className="flex flex-wrap items-center gap-3 mt-2">
+            <p className="font-mono text-xs text-neutral-400">
+              Upload, manage & reference high-res images & video reels
+            </p>
+            {storageStatus?.cloudinaryConfigured ? (
+              <span className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-emerald-950/60 border border-emerald-800/80 text-emerald-400 font-mono text-[10px]">
+                <Cloud className="w-3 h-3" />
+                <span>Cloudinary Connected ({storageStatus.cloudName})</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-neutral-800 border border-neutral-700 text-neutral-300 font-mono text-[10px]">
+                <HardDrive className="w-3 h-3 text-neutral-400" />
+                <span>Local Server Storage Active</span>
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Action Buttons */}

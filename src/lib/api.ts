@@ -1,76 +1,5 @@
-import {
-  collection,
-  doc,
-  getDocs,
-  getDoc,
-  setDoc,
-  deleteDoc,
-  writeBatch
-} from 'firebase/firestore';
-import { db } from './firebase';
 import { AboutData, ContactData, MediaItem, Project, SiteSettings } from '../types';
 import { initialAboutData, initialContactData, initialProjects, initialSiteSettings } from '../data/initial-store';
-
-export enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-export interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
-  };
-}
-
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: null,
-      email: null,
-      emailVerified: null,
-      isAnonymous: null,
-      tenantId: null,
-      providerInfo: []
-    },
-    operationType,
-    path
-  };
-  console.warn('Firestore Operation Notice:', JSON.stringify(errInfo));
-}
-
-// Timeout helper so Firebase NEVER hangs or blocks UI saves/fetches
-function withTimeout<T>(promise: Promise<T>, timeoutMs = 2000, fallback: T): Promise<T> {
-  let timer: any;
-  const timeoutPromise = new Promise<T>((resolve) => {
-    timer = setTimeout(() => resolve(fallback), timeoutMs);
-  });
-  return Promise.race([
-    promise.then((res) => {
-      clearTimeout(timer);
-      return res;
-    }),
-    timeoutPromise
-  ]).catch(() => {
-    clearTimeout(timer);
-    return fallback;
-  });
-}
 
 const ADMIN_TOKEN_KEY = 'subeg_admin_token';
 const DEFAULT_ADMIN_TOKEN = 'subeg-admin-authenticated-token-2026';
@@ -103,7 +32,7 @@ function getAuthHeaders(): Record<string, string> {
   };
 }
 
-// Global broadcast event for 0ms cross-component and cross-tab UI reactivity
+// Global broadcast event for 0ms cross-component UI updates
 function broadcastStoreUpdate(type: 'projects' | 'about' | 'contact' | 'settings' | 'media', payload: any) {
   if (typeof window !== 'undefined') {
     try {
@@ -112,7 +41,7 @@ function broadcastStoreUpdate(type: 'projects' | 'about' | 'contact' | 'settings
   }
 }
 
-// Convert File to highly optimized Data URL
+// Helper to convert File to optimized Data URL
 export async function fileToDataUrl(file: File): Promise<string> {
   const isImage =
     file.type.startsWith('image/') ||
@@ -232,14 +161,7 @@ export async function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-export function getFirestoreStatus(): { available: boolean; mode: string } {
-  return {
-    available: Boolean(db),
-    mode: 'Multi-Tier Active (Cloud Firestore + Server Datastore + Instant Local Storage)'
-  };
-}
-
-// Fetch helper directly from Server Backend API
+// Fetch helper directly from Express Server Datastore
 async function fetchFromServer<T>(endpoint: string, fallback: T): Promise<T> {
   try {
     const res = await fetch(`/api/${endpoint}`, {
@@ -254,18 +176,7 @@ async function fetchFromServer<T>(endpoint: string, fallback: T): Promise<T> {
   return fallback;
 }
 
-// Background sync helper to save to Firestore safely without blocking user flow
-async function syncToFirestoreAsync(collectionName: string, docId: string, data: any) {
-  if (!db) return;
-  try {
-    const writePromise = setDoc(doc(db, collectionName, docId), data, { merge: true });
-    await withTimeout(writePromise, 2500, null);
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `${collectionName}/${docId}`);
-  }
-}
-
-// Cache trackers
+// Cache trackers for snappy UI
 let lastProjectsJson = '';
 let lastAboutJson = '';
 let lastContactJson = '';
@@ -286,7 +197,7 @@ export function subscribeProjects(callback: (projects: Project[]) => void): () =
     }
   } catch {}
 
-  // 2. Fetch fresh authoritative data
+  // 2. Fetch authoritative fresh data from server
   fetchProjects().then((projects) => {
     const jsonStr = JSON.stringify(projects);
     if (jsonStr !== lastProjectsJson) {
@@ -319,55 +230,35 @@ export function subscribeProjects(callback: (projects: Project[]) => void): () =
 }
 
 export async function fetchProjects(category?: string): Promise<Project[]> {
-  // 1. Authoritative Server Backend API (fastest & robust)
+  // 1. Authoritative Server Datastore
   let serverProjects: Project[] | null = null;
   try {
-    const fetched = await fetchFromServer<Project[]>('projects', []);
-    if (Array.isArray(fetched) && fetched.length > 0) {
-      serverProjects = fetched;
-      try {
-        localStorage.setItem('subeg_projects_data', JSON.stringify(serverProjects));
-      } catch {}
+    const res = await fetch('/api/projects', {
+      headers: getAuthHeaders()
+    });
+    if (res.ok) {
+      const fetched = await res.json();
+      if (Array.isArray(fetched)) {
+        serverProjects = fetched;
+        try {
+          localStorage.setItem('subeg_projects_data', JSON.stringify(serverProjects));
+        } catch {}
+      }
     }
   } catch {}
 
-  if (serverProjects && serverProjects.length > 0) {
+  if (serverProjects !== null && Array.isArray(serverProjects)) {
     return category && category !== 'ALL'
       ? serverProjects.filter((p) => p.category === category)
       : serverProjects;
   }
 
-  // 2. Try Firestore with timeout protection
-  if (db) {
-    try {
-      const snapshot = await withTimeout(getDocs(collection(db, 'projects')), 2000, null);
-      if (snapshot && !snapshot.empty) {
-        const firestoreProjects: Project[] = snapshot.docs.map((d) => ({
-          id: d.id,
-          ...d.data()
-        } as Project));
-
-        if (firestoreProjects.length > 0) {
-          firestoreProjects.sort((a, b) => (a.sortOrder ?? 99) - (b.sortOrder ?? 99));
-          try {
-            localStorage.setItem('subeg_projects_data', JSON.stringify(firestoreProjects));
-          } catch {}
-          return category && category !== 'ALL'
-            ? firestoreProjects.filter((p) => p.category === category)
-            : firestoreProjects;
-        }
-      }
-    } catch (err) {
-      handleFirestoreError(err, OperationType.LIST, 'projects');
-    }
-  }
-
-  // 3. LocalStorage Cache fallback
+  // 2. LocalStorage Cache fallback
   try {
     const local = localStorage.getItem('subeg_projects_data');
-    if (local) {
+    if (local !== null) {
       const parsed = JSON.parse(local);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         return category && category !== 'ALL'
           ? parsed.filter((p: Project) => p.category === category)
           : parsed;
@@ -375,7 +266,7 @@ export async function fetchProjects(category?: string): Promise<Project[]> {
     }
   } catch {}
 
-  // 4. Default Seed Projects
+  // 3. Default Seed Projects
   return category && category !== 'ALL'
     ? initialProjects.filter((p) => p.category === category)
     : initialProjects;
@@ -434,23 +325,24 @@ export async function saveProjectApi(project: Partial<Project>): Promise<Project
     broadcastStoreUpdate('projects', existingList);
   } catch {}
 
-  // 2. Persist to Express Server Backend immediately
+  // 2. Persist directly to Express Server Backend JSON Store
   try {
     const isEdit = Boolean(project.id);
     const url = isEdit ? `/api/projects/${id}` : '/api/projects';
     const method = isEdit ? 'PUT' : 'POST';
-    await fetch(url, {
+    const res = await fetch(url, {
       method,
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify(fullProject)
     });
+    if (res.ok) {
+      const savedFromServer = await res.json();
+      return savedFromServer;
+    }
   } catch (e) {
     console.warn('Notice saving project to server backend:', e);
   }
-
-  // 3. Non-blocking background sync to Cloud Firestore
-  syncToFirestoreAsync('projects', id, fullProject);
 
   return fullProject;
 }
@@ -473,11 +365,6 @@ export async function deleteProjectApi(id: string): Promise<void> {
     });
   } catch (e) {
     console.warn('Notice deleting project on server backend:', e);
-  }
-
-  // 3. Non-blocking delete from Firestore
-  if (db) {
-    withTimeout(deleteDoc(doc(db, 'projects', id)), 2000, null).catch(() => {});
   }
 }
 
@@ -508,18 +395,6 @@ export async function reorderProjectsApi(projectIds: string[]): Promise<void> {
     });
   } catch (e) {
     console.warn('Notice reordering on server:', e);
-  }
-
-  // 3. Firestore batch update non-blocking
-  if (db) {
-    try {
-      const batch = writeBatch(db);
-      projectIds.forEach((id, index) => {
-        const docRef = doc(db, 'projects', id);
-        batch.update(docRef, { sortOrder: index });
-      });
-      withTimeout(batch.commit(), 2500, null).catch(() => {});
-    } catch {}
   }
 }
 
@@ -576,25 +451,7 @@ export async function fetchAboutData(): Promise<AboutData> {
     }
   } catch {}
 
-  // 2. Try Firestore with timeout protection
-  if (db) {
-    try {
-      const docSnap = await withTimeout(getDoc(doc(db, 'about', 'main')), 2000, null);
-      if (docSnap && docSnap.exists()) {
-        const data = docSnap.data() as AboutData;
-        if (data && (data.name || data.introduction)) {
-          try {
-            localStorage.setItem('subeg_about_data', JSON.stringify(data));
-          } catch {}
-          return data;
-        }
-      }
-    } catch (err) {
-      handleFirestoreError(err, OperationType.GET, 'about/main');
-    }
-  }
-
-  // 3. LocalStorage Cache
+  // 2. LocalStorage Cache
   try {
     const local = localStorage.getItem('subeg_about_data');
     if (local) return JSON.parse(local);
@@ -618,20 +475,21 @@ export async function saveAboutApi(data: Partial<AboutData>): Promise<AboutData>
     broadcastStoreUpdate('about', updated);
   } catch {}
 
-  // 2. Save to Server Backend
+  // 2. Save directly to Server Backend Datastore
   try {
-    await fetch('/api/about', {
+    const res = await fetch('/api/about', {
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify(updated)
     });
+    if (res.ok) {
+      const serverResult = await res.json();
+      return serverResult;
+    }
   } catch (e) {
     console.warn('Notice saving about to server backend:', e);
   }
-
-  // 3. Non-blocking Firestore save
-  syncToFirestoreAsync('about', 'main', updated);
 
   return updated;
 }
@@ -689,25 +547,7 @@ export async function fetchContactData(): Promise<ContactData> {
     }
   } catch {}
 
-  // 2. Try Firestore with timeout protection
-  if (db) {
-    try {
-      const docSnap = await withTimeout(getDoc(doc(db, 'contact', 'main')), 2000, null);
-      if (docSnap && docSnap.exists()) {
-        const data = docSnap.data() as ContactData;
-        if (data && (data.email || data.location)) {
-          try {
-            localStorage.setItem('subeg_contact_data', JSON.stringify(data));
-          } catch {}
-          return data;
-        }
-      }
-    } catch (err) {
-      handleFirestoreError(err, OperationType.GET, 'contact/main');
-    }
-  }
-
-  // 3. LocalStorage Cache
+  // 2. LocalStorage Cache
   try {
     const local = localStorage.getItem('subeg_contact_data');
     if (local) return JSON.parse(local);
@@ -733,20 +573,21 @@ export async function saveContactApi(data: Partial<ContactData>): Promise<Contac
 
   // 2. Save to Server Backend
   try {
-    await fetch('/api/contact', {
+    const res = await fetch('/api/contact', {
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify(updated)
     });
+    if (res.ok) {
+      const savedResult = await res.json();
+      return savedResult;
+    }
   } catch (e) {
     console.warn('Notice saving contact to server backend:', e);
   }
 
-  // 3. Non-blocking Firestore save
-  syncToFirestoreAsync('contact', 'main', updated);
-
-  // 4. Sync siteSettings contactEmail if needed
+  // 3. Sync siteSettings contactEmail if needed
   if (data.email) {
     try {
       const localStg = localStorage.getItem('subeg_site_settings');
@@ -815,25 +656,7 @@ export async function fetchSiteSettings(): Promise<SiteSettings> {
     }
   } catch {}
 
-  // 2. Try Firestore with timeout protection
-  if (db) {
-    try {
-      const docSnap = await withTimeout(getDoc(doc(db, 'settings', 'main')), 2000, null);
-      if (docSnap && docSnap.exists()) {
-        const data = docSnap.data() as SiteSettings;
-        if (data && data.siteTitle) {
-          try {
-            localStorage.setItem('subeg_site_settings', JSON.stringify(data));
-          } catch {}
-          return data;
-        }
-      }
-    } catch (err) {
-      handleFirestoreError(err, OperationType.GET, 'settings/main');
-    }
-  }
-
-  // 3. LocalStorage Cache
+  // 2. LocalStorage Cache
   try {
     const local = localStorage.getItem('subeg_site_settings');
     if (local) return JSON.parse(local);
@@ -859,20 +682,21 @@ export async function saveSettingsApi(data: Partial<SiteSettings>): Promise<Site
 
   // 2. Save to Server Backend
   try {
-    await fetch('/api/settings', {
+    const res = await fetch('/api/settings', {
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify(updated)
     });
+    if (res.ok) {
+      const savedRes = await res.json();
+      return savedRes;
+    }
   } catch (e) {
     console.warn('Notice saving settings to server backend:', e);
   }
 
-  // 3. Non-blocking Firestore save
-  syncToFirestoreAsync('settings', 'main', updated);
-
-  // 4. Keep contact email in sync if contactEmail changed
+  // 3. Keep contact email in sync if contactEmail changed
   if (data.contactEmail) {
     try {
       const localCnt = localStorage.getItem('subeg_contact_data');
@@ -902,26 +726,7 @@ export async function fetchMediaApi(): Promise<MediaItem[]> {
     }
   } catch {}
 
-  // 2. Try Firestore with timeout protection
-  if (db) {
-    try {
-      const querySnapshot = await withTimeout(getDocs(collection(db, 'media')), 2000, null);
-      if (querySnapshot && !querySnapshot.empty) {
-        const mediaItems: MediaItem[] = querySnapshot.docs.map(
-          (d) => ({ id: d.id, ...d.data() } as MediaItem)
-        );
-        mediaItems.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
-        try {
-          localStorage.setItem('subeg_media_items', JSON.stringify(mediaItems));
-        } catch {}
-        return mediaItems;
-      }
-    } catch (err) {
-      handleFirestoreError(err, OperationType.LIST, 'media');
-    }
-  }
-
-  // 3. Fallback to LocalStorage
+  // 2. Fallback to LocalStorage
   const local = localStorage.getItem('subeg_media_items');
   return local ? JSON.parse(local) : [];
 }
@@ -932,7 +737,7 @@ export async function uploadMediaApi(file: File): Promise<MediaItem> {
 
   let finalUrl = dataUrl;
 
-  // 1. Upload to Server disk storage
+  // 1. Upload to Server (which automatically uploads to Cloudinary or disk)
   try {
     const formData = new FormData();
     formData.append('file', file);
@@ -971,9 +776,6 @@ export async function uploadMediaApi(file: File): Promise<MediaItem> {
     broadcastStoreUpdate('media', existing);
   } catch {}
 
-  // 3. Non-blocking Firestore save
-  syncToFirestoreAsync('media', mediaId, mediaItem);
-
   return mediaItem;
 }
 
@@ -994,11 +796,6 @@ export async function deleteMediaApi(filenameOrId: string): Promise<void> {
     localStorage.setItem('subeg_media_items', JSON.stringify(filtered));
     broadcastStoreUpdate('media', filtered);
   } catch {}
-
-  // Non-blocking Firestore delete
-  if (db) {
-    withTimeout(deleteDoc(doc(db, 'media', filenameOrId)), 2000, null).catch(() => {});
-  }
 }
 
 export async function uploadCvApi(file: File): Promise<{ cvUrl: string }> {
@@ -1134,7 +931,6 @@ export async function importFullBackup(jsonContent: string): Promise<boolean> {
 }
 
 export async function resetDemoDataApi(): Promise<void> {
-  // Server reset
   try {
     await fetch('/api/settings/reset-demo', {
       method: 'POST',
@@ -1142,21 +938,6 @@ export async function resetDemoDataApi(): Promise<void> {
       headers: getAuthHeaders()
     });
   } catch {}
-
-  // Non-blocking Firestore reset
-  if (db) {
-    try {
-      const batch = writeBatch(db);
-      initialProjects.forEach((proj, idx) => {
-        const docRef = doc(db, 'projects', proj.id);
-        batch.set(docRef, { ...proj, sortOrder: idx });
-      });
-      batch.set(doc(db, 'about', 'main'), initialAboutData);
-      batch.set(doc(db, 'contact', 'main'), initialContactData);
-      batch.set(doc(db, 'settings', 'main'), initialSiteSettings);
-      withTimeout(batch.commit(), 2500, null).catch(() => {});
-    } catch {}
-  }
 
   localStorage.removeItem('subeg_projects_data');
   localStorage.removeItem('subeg_about_data');

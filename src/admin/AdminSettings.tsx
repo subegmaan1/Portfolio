@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SiteSettings } from '../types';
-import { exportFullBackup, importFullBackup, resetDemoDataApi, saveSettingsApi, getFirestoreStatus } from '../lib/api';
-import { Save, RefreshCw, Key, ShieldCheck, Download, Upload, Database, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { exportFullBackup, importFullBackup, resetDemoDataApi, saveSettingsApi } from '../lib/api';
+import { Save, RefreshCw, Key, ShieldCheck, Download, Upload, Database, CheckCircle2, AlertTriangle, HardDrive } from 'lucide-react';
 
 interface AdminSettingsProps {
   settings: SiteSettings;
@@ -25,8 +25,6 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
   const [message, setMessage] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isDirtyRef = useRef(false);
-
-  const status = getFirestoreStatus();
 
   // Sync state only if settings prop updates and user has not typed unsaved edits
   useEffect(() => {
@@ -53,7 +51,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
         contactEmail
       });
       isDirtyRef.current = false;
-      setMessage('Site settings updated and synced to Cloud Firestore & Server!');
+      setMessage('Site settings updated successfully!');
       onRefreshSettings();
     } catch {
       setMessage('Failed to update site settings.');
@@ -157,25 +155,25 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
       <div className="bg-neutral-900/80 p-6 border border-neutral-800 space-y-4">
         <h2 className="font-syne font-bold text-sm text-neutral-200 uppercase flex items-center space-x-2">
           <Database className="w-4 h-4 text-emerald-400" />
-          <span>Data Storage & Multi-Device Sync Engine</span>
+          <span>Server Backend Datastore & Storage Engine</span>
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
           <div className="p-4 bg-neutral-950 border border-neutral-800 space-y-1.5">
-            <div className="text-neutral-400 uppercase text-[10px] tracking-wider">Cloud Server Storage</div>
+            <div className="text-neutral-400 uppercase text-[10px] tracking-wider">Server Text Datastore</div>
             <div className="text-emerald-400 font-bold flex items-center space-x-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-pulse"></span>
-              <span>Online & Synced (JSON + Disk Media)</span>
+              <span>Direct Node.js Server Datastore Active</span>
             </div>
-            <p className="text-neutral-500 text-[11px]">Primary persistent storage running on high-speed server container.</p>
+            <p className="text-neutral-500 text-[11px]">Instant text & content updates directly persisted to backend storage.</p>
           </div>
 
           <div className="p-4 bg-neutral-950 border border-neutral-800 space-y-1.5">
-            <div className="text-neutral-400 uppercase text-[10px] tracking-wider">Cloud Firestore Engine</div>
+            <div className="text-neutral-400 uppercase text-[10px] tracking-wider">Media & Assets</div>
             <div className="text-neutral-200 font-bold flex items-center space-x-1.5">
-              <span className="w-2 h-2 rounded-full bg-blue-400 inline-block"></span>
-              <span>{status.mode}</span>
+              <HardDrive className="w-3.5 h-3.5 text-neutral-400" />
+              <span>Cloudinary / Local Disk Storage</span>
             </div>
-            <p className="text-neutral-500 text-[11px]">Protected by auto-failover to avoid Firebase daily read quota freezes.</p>
+            <p className="text-neutral-500 text-[11px]">High-speed asset pipeline for project photos and video reels.</p>
           </div>
         </div>
       </div>

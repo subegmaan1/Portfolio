@@ -105,7 +105,7 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
         photoUrl
       });
       isDirtyRef.current = false;
-      setMessage('Saved to Cloud Firestore & Server storage successfully!');
+      setMessage('About content saved successfully!');
       onRefreshAbout();
     } catch {
       setMessage('Failed to update About content');

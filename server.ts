@@ -4,6 +4,7 @@ import fs from 'fs';
 import cookieParser from 'cookie-parser';
 import multer from 'multer';
 import dotenv from 'dotenv';
+import { v2 as cloudinary } from 'cloudinary';
 import { createServer as createViteServer } from 'vite';
 import { initialAboutData, initialContactData, initialProjects, initialSiteSettings } from './src/data/initial-store';
 import { AboutData, ContactData, MediaItem, Project, SiteSettings } from './src/types';
@@ -92,8 +93,26 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 50 * 1024 * 1024 } // 50MB max file size
+  limits: { fileSize: 100 * 1024 * 1024 } // 100MB max file size (supports HD videos)
 });
+
+// Lazy Cloudinary configuration
+function getCloudinary() {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  const apiKey = process.env.CLOUDINARY_API_KEY;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+
+  if (cloudName && apiKey && apiSecret) {
+    cloudinary.config({
+      cloud_name: cloudName,
+      api_key: apiKey,
+      api_secret: apiSecret,
+      secure: true
+    });
+    return cloudinary;
+  }
+  return null;
+}
 
 // Admin Password check
 const getAdminPassword = () => process.env.ADMIN_PASSWORD || 'subeg2026';
@@ -394,18 +413,28 @@ async function startServer() {
   });
 
   // --- MEDIA API ---
+  app.get('/api/media/status', (_req, res) => {
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+    const isCloudinaryActive = Boolean(cloudName && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET);
+    res.json({
+      cloudinaryConfigured: isCloudinaryActive,
+      cloudName: cloudName || null,
+      storageMode: isCloudinaryActive ? 'Cloudinary (Cloud CDN & Video Streaming)' : 'Local Server Storage (/uploads)'
+    });
+  });
+
   app.get('/api/media', (_req, res) => {
     // Read files in uploads folder
     try {
       const files = fs.readdirSync(UPLOADS_DIR);
-      const mediaList: MediaItem[] = files.map(file => {
+      const diskList: MediaItem[] = files.map(file => {
         const filePath = path.join(UPLOADS_DIR, file);
         const stats = fs.statSync(filePath);
         const ext = path.extname(file).toLowerCase();
         let mimeType = 'application/octet-stream';
         if (['.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg'].includes(ext)) {
           mimeType = `image/${ext.replace('.', '')}`;
-        } else if (['.mp4', '.webm', '.mov'].includes(ext)) {
+        } else if (['.mp4', '.webm', '.mov', '.ogg'].includes(ext)) {
           mimeType = `video/${ext.replace('.', '')}`;
         } else if (ext === '.pdf') {
           mimeType = 'application/pdf';
@@ -422,19 +451,46 @@ async function startServer() {
         };
       });
 
-      res.json(mediaList);
+      // Merge with any Cloudinary media items stored in JSON
+      const storedMedia = currentStore.media || [];
+      const combined = [...storedMedia];
+      diskList.forEach(d => {
+        if (!combined.some(m => m.id === d.id || m.url === d.url)) {
+          combined.push(d);
+        }
+      });
+
+      res.json(combined);
     } catch (err) {
-      res.json([]);
+      res.json(currentStore.media || []);
     }
   });
 
-  app.post('/api/media/upload', requireAdmin, upload.single('file'), (req, res) => {
+  app.post('/api/media/upload', requireAdmin, upload.single('file'), async (req, res) => {
     if (!req.file) {
       res.status(400).json({ error: 'No file uploaded' });
       return;
     }
 
-    const url = `/uploads/${req.file.filename}`;
+    let url = `/uploads/${req.file.filename}`;
+    let resourceType = req.file.mimetype.startsWith('video/') ? 'video' : 'image';
+    const cld = getCloudinary();
+
+    if (cld) {
+      try {
+        const filePath = path.join(UPLOADS_DIR, req.file.filename);
+        const uploadResult = await cld.uploader.upload(filePath, {
+          folder: 'subeg_portfolio',
+          resource_type: resourceType === 'video' ? 'video' : 'auto'
+        });
+        if (uploadResult?.secure_url) {
+          url = uploadResult.secure_url;
+        }
+      } catch (cldErr) {
+        console.warn('Notice: Cloudinary direct upload failed, fallback to local disk storage:', cldErr);
+      }
+    }
+
     const newItem: MediaItem = {
       id: req.file.filename,
       filename: req.file.filename,
@@ -445,7 +501,8 @@ async function startServer() {
       uploadedAt: new Date().toISOString()
     };
 
-    currentStore.media.push(newItem);
+    if (!currentStore.media) currentStore.media = [];
+    currentStore.media.unshift(newItem);
     saveStore(currentStore);
 
     res.json(newItem);

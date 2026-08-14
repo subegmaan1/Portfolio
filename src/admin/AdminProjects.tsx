@@ -14,7 +14,8 @@ import {
   GripVertical,
   Layers,
   ArrowUpDown,
-  Check
+  Check,
+  AlertTriangle
 } from 'lucide-react';
 
 interface AdminProjectsProps {
@@ -36,6 +37,7 @@ export const AdminProjects: React.FC<AdminProjectsProps> = ({
   const [loading, setLoading] = useState(false);
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
   const [reorderSuccess, setReorderSuccess] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
 
   // Drag-and-drop state
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -65,17 +67,17 @@ export const AdminProjects: React.FC<AdminProjectsProps> = ({
     return matchesSearch && matchesCategory && matchesStatus;
   });
 
-  const handleDelete = async (project: Project) => {
-    if (confirm(`Are you sure you want to delete project "${project.title}"?`)) {
-      setLoading(true);
-      try {
-        await deleteProjectApi(project.id);
-        onRefreshProjects();
-      } catch (err) {
-        alert('Failed to delete project');
-      } finally {
-        setLoading(false);
-      }
+  const confirmDeleteProject = async () => {
+    if (!projectToDelete) return;
+    setLoading(true);
+    try {
+      await deleteProjectApi(projectToDelete.id);
+      setProjectToDelete(null);
+      onRefreshProjects();
+    } catch (err) {
+      alert('Failed to delete project');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -414,7 +416,7 @@ export const AdminProjects: React.FC<AdminProjectsProps> = ({
                           <Edit className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          onClick={() => handleDelete(proj)}
+                          onClick={() => setProjectToDelete(proj)}
                           className="p-1.5 bg-red-950/50 text-red-400 hover:text-red-300 hover:bg-red-900/50 rounded transition-colors"
                           title="Delete Project"
                         >
@@ -429,6 +431,40 @@ export const AdminProjects: React.FC<AdminProjectsProps> = ({
           </table>
         </div>
       )}
+
+      {/* Delete Confirmation In-App Modal */}
+      {projectToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 max-w-md w-full p-6 space-y-4 animate-scale-up font-mono">
+            <div className="flex items-center space-x-3 text-red-400">
+              <AlertTriangle className="w-6 h-6 shrink-0" />
+              <h3 className="font-syne font-bold text-lg text-neutral-100">Delete Project?</h3>
+            </div>
+            <p className="text-xs text-neutral-300 leading-relaxed font-sans">
+              Are you sure you want to delete <strong className="text-white">"{projectToDelete.title}"</strong>? This will remove the project from both your portfolio and server database immediately.
+            </p>
+            <div className="flex justify-end space-x-3 pt-3 border-t border-neutral-800">
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => setProjectToDelete(null)}
+                className="px-4 py-2 border border-neutral-750 text-neutral-300 hover:bg-neutral-800 text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={confirmDeleteProject}
+                className="px-5 py-2 bg-red-600 hover:bg-red-500 text-white font-bold text-xs uppercase tracking-wider disabled:opacity-50"
+              >
+                {loading ? 'Deleting...' : 'Confirm Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Batch Photo Project Modal */}
       <BatchPhotoProjectModal
         isOpen={isBatchModalOpen}

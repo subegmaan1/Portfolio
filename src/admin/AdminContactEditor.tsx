@@ -58,7 +58,7 @@ export const AdminContactEditor: React.FC<AdminContactEditorProps> = ({
         additionalLinks: validLinks
       });
       isDirtyRef.current = false;
-      setMessage('Contact details saved to Cloud Firestore & Server storage successfully!');
+      setMessage('Contact details saved successfully!');
       onRefreshContact();
     } catch (err) {
       console.error('Failed to update contact:', err);
