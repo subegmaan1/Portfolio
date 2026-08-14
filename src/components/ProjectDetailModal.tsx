@@ -40,7 +40,17 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
   const prevProject = currentIndex > 0 ? categoryProjects[currentIndex - 1] : categoryProjects[categoryProjects.length - 1];
   const nextProject = currentIndex < categoryProjects.length - 1 ? categoryProjects[currentIndex + 1] : categoryProjects[0];
 
-  const isHeroVideo = project.heroMedia.endsWith('.mp4') || project.heroMedia.endsWith('.webm');
+  const isHeroVideo = project.heroMedia?.endsWith('.mp4') || project.heroMedia?.endsWith('.webm');
+
+  // Collect all media items (Hero Media + Gallery frames) uniquely
+  const allMediaItems = Array.from(
+    new Set(
+      [
+        ...(project.heroMedia ? [project.heroMedia] : []),
+        ...(project.gallery || [])
+      ].filter(item => typeof item === 'string' && item.trim().length > 0)
+    )
+  );
 
   return (
     <motion.div
@@ -112,38 +122,11 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
           </div>
         </div>
 
-        {/* Hero Media */}
-        {project.heroMedia && (
-          <div className="relative w-full aspect-video rounded-none overflow-hidden border border-neutral-800 bg-neutral-900 shadow-2xl">
-            {isHeroVideo ? (
-              <video
-                src={project.heroMedia}
-                autoPlay
-                loop
-                muted
-                playsInline
-                controls
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <img
-                src={project.heroMedia}
-                alt={project.title}
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-                onError={e => {
-                  (e.currentTarget as HTMLElement).style.display = 'none';
-                }}
-              />
-            )}
-          </div>
-        )}
-
-        {/* Documentation Image Gallery Carousel (Positioned immediately below Hero Media) */}
-        {project.gallery && project.gallery.length > 0 && (
+        {/* Project Documentation & Media Gallery (Cinematic stage with interactive Fullscreen Lightbox) */}
+        {allMediaItems.length > 0 && (
           <ProjectGalleryCarousel
             projectTitle={project.title}
-            items={project.gallery}
+            items={allMediaItems}
           />
         )}
 

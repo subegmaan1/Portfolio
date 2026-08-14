@@ -119,13 +119,13 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
       <div className="bg-neutral-900/60 p-6 border border-neutral-800 space-y-3">
         <h2 className="font-syne font-bold text-sm text-neutral-200 uppercase flex items-center space-x-2">
           <Key className="w-4 h-4 text-amber-400" />
-          <span>Admin Password Configuration</span>
+          <span>Admin Access Security</span>
         </h2>
         <p className="text-neutral-300 leading-relaxed font-light">
-          The admin password is standardly configured via the <code className="bg-neutral-800 px-1.5 py-0.5 text-amber-300">ADMIN_PASSWORD</code> environment variable.
+          Admin authentication is securely validated via encrypted session cookies against the server environment credentials (<code className="bg-neutral-800 px-1.5 py-0.5 text-amber-300">ADMIN_PASSWORD</code>).
         </p>
-        <p className="text-neutral-400 font-light">
-          Current environment default: <code className="bg-neutral-800 px-1.5 py-0.5 text-neutral-200">subeg2026</code>
+        <p className="text-neutral-400 font-light text-[11px]">
+          To update your administrator password, modify the secret environment variable in your project configuration.
         </p>
       </div>
 

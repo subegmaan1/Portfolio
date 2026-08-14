@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, ChevronRight, Maximize2, X, Play, Image as ImageIcon } from 'lucide-react';
 
@@ -322,121 +323,142 @@ export const ProjectGalleryCarousel: React.FC<ProjectGalleryCarouselProps> = ({
         </div>
       )}
 
-      {/* Fullscreen Lightbox Modal (Completely Responsive with Zero Overlapping) */}
-      <AnimatePresence>
-        {isFullscreen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[999999] bg-neutral-950/98 backdrop-blur-2xl flex flex-col h-full w-full overflow-hidden select-none"
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
-          >
-            {/* Top Toolbar */}
-            <div className="shrink-0 h-14 sm:h-16 px-4 sm:px-6 flex items-center justify-between border-b border-neutral-800/80 bg-neutral-950/90 backdrop-blur-md z-30">
-              <div className="flex items-center space-x-2.5 min-w-0 pr-4">
-                <span className="font-syne font-bold text-xs sm:text-sm text-neutral-200 uppercase truncate">
-                  {projectTitle}
-                </span>
-                <span className="text-neutral-600">&bull;</span>
-                <span className="font-mono text-[11px] text-teal-400 shrink-0 font-semibold">
-                  {currentIndex + 1} / {total}
-                </span>
-              </div>
-
-              <button
-                onClick={() => setIsFullscreen(false)}
-                className="shrink-0 p-2 rounded-full bg-neutral-900 border border-neutral-700 text-neutral-200 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer active:scale-95"
-                title="Close Lightbox (Esc)"
+      {/* Fullscreen Lightbox Modal rendered via Portal to escape modal overflow & motion transforms */}
+      {typeof document !== 'undefined' &&
+        createPortal(
+          <AnimatePresence>
+            {isFullscreen && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="fixed inset-0 z-[9999999] bg-neutral-950/98 backdrop-blur-2xl flex flex-col h-[100dvh] w-[100vw] overflow-hidden select-none"
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
               >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+                {/* Top Toolbar */}
+                <div className="shrink-0 h-14 sm:h-16 px-4 sm:px-6 flex items-center justify-between border-b border-neutral-800/80 bg-neutral-950/90 backdrop-blur-md z-30">
+                  <div className="flex items-center space-x-2.5 min-w-0 pr-4">
+                    <span className="font-syne font-bold text-xs sm:text-sm text-neutral-200 uppercase truncate">
+                      {projectTitle}
+                    </span>
+                    <span className="text-neutral-600">&bull;</span>
+                    <span className="font-mono text-[11px] text-teal-400 shrink-0 font-semibold">
+                      {currentIndex + 1} / {total}
+                    </span>
+                  </div>
 
-            {/* Lightbox Main Stage (Flex-1 min-h-0 guarantees strict viewport containment with zero overflow) */}
-            <div className="flex-1 min-h-0 relative w-full flex items-center justify-center p-2 sm:p-6 overflow-hidden">
-              <AnimatePresence initial={false} custom={direction} mode="wait">
-                <motion.div
-                  key={currentIndex}
-                  custom={direction}
-                  variants={slideVariants}
-                  initial="enter"
-                  animate="center"
-                  exit="exit"
-                  className="w-full h-full flex items-center justify-center"
-                >
-                  {isVideo ? (
-                    <video
-                      src={currentMedia}
-                      autoPlay
-                      loop
-                      controls
-                      playsInline
-                      className="max-h-full max-w-full object-contain shadow-2xl"
-                    />
-                  ) : (
-                    <img
-                      src={currentMedia}
-                      alt={projectTitle}
-                      className="max-h-full max-w-full object-contain shadow-2xl"
-                      referrerPolicy="no-referrer"
-                    />
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => {
+                        if (!document.fullscreenElement) {
+                          document.documentElement.requestFullscreen?.().catch(() => {});
+                        } else {
+                          document.exitFullscreen?.().catch(() => {});
+                        }
+                      }}
+                      className="p-2 rounded-full bg-neutral-900 border border-neutral-700 text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer active:scale-95 hidden sm:flex items-center justify-center"
+                      title="Toggle Device Fullscreen"
+                    >
+                      <Maximize2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setIsFullscreen(false)}
+                      className="shrink-0 p-2 rounded-full bg-neutral-900 border border-neutral-700 text-neutral-200 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer active:scale-95"
+                      title="Close Lightbox (Esc)"
+                      id="close-gallery-lightbox-btn"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Lightbox Main Stage (Flex-1 min-h-0 guarantees strict viewport containment with zero overflow) */}
+                <div className="flex-1 min-h-0 relative w-full flex items-center justify-center p-2 sm:p-6 overflow-hidden">
+                  <AnimatePresence initial={false} custom={direction} mode="wait">
+                    <motion.div
+                      key={currentIndex}
+                      custom={direction}
+                      variants={slideVariants}
+                      initial="enter"
+                      animate="center"
+                      exit="exit"
+                      className="w-full h-full flex items-center justify-center"
+                    >
+                      {isVideo ? (
+                        <video
+                          src={currentMedia}
+                          autoPlay
+                          loop
+                          controls
+                          playsInline
+                          className="max-h-full max-w-full object-contain shadow-2xl"
+                        />
+                      ) : (
+                        <img
+                          src={currentMedia}
+                          alt={projectTitle}
+                          className="max-h-full max-w-full object-contain shadow-2xl"
+                          referrerPolicy="no-referrer"
+                        />
+                      )}
+                    </motion.div>
+                  </AnimatePresence>
+
+                  {total > 1 && (
+                    <>
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          goToPrev();
+                        }}
+                        className="absolute left-2 sm:left-6 top-1/2 -translate-y-1/2 z-30 p-2.5 sm:p-4 bg-neutral-950/80 hover:bg-teal-950 text-white border border-neutral-700 hover:border-teal-500 rounded-full transition-all shadow-2xl active:scale-90 cursor-pointer"
+                        title="Previous Slide"
+                      >
+                        <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
+                      </button>
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          goToNext();
+                        }}
+                        className="absolute right-2 sm:right-6 top-1/2 -translate-y-1/2 z-30 p-2.5 sm:p-4 bg-neutral-950/80 hover:bg-teal-950 text-white border border-neutral-700 hover:border-teal-500 rounded-full transition-all shadow-2xl active:scale-90 cursor-pointer"
+                        title="Next Slide"
+                      >
+                        <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
+                      </button>
+                    </>
                   )}
-                </motion.div>
-              </AnimatePresence>
+                </div>
 
-              {total > 1 && (
-                <>
-                  <button
-                    onClick={e => {
-                      e.stopPropagation();
-                      goToPrev();
-                    }}
-                    className="absolute left-2 sm:left-6 top-1/2 -translate-y-1/2 z-30 p-2.5 sm:p-4 bg-neutral-950/80 hover:bg-teal-950 text-white border border-neutral-700 hover:border-teal-500 rounded-full transition-all shadow-2xl active:scale-90 cursor-pointer"
-                    title="Previous Slide"
+                {/* Bottom Mini Thumbnails Strip */}
+                {total > 1 && (
+                  <div
+                    ref={fullscreenThumbnailsRef}
+                    className="shrink-0 py-2.5 px-4 border-t border-neutral-800/80 bg-neutral-950/90 backdrop-blur-md overflow-x-auto flex justify-center space-x-2 z-30 scrollbar-none"
                   >
-                    <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
-                  </button>
-                  <button
-                    onClick={e => {
-                      e.stopPropagation();
-                      goToNext();
-                    }}
-                    className="absolute right-2 sm:right-6 top-1/2 -translate-y-1/2 z-30 p-2.5 sm:p-4 bg-neutral-950/80 hover:bg-teal-950 text-white border border-neutral-700 hover:border-teal-500 rounded-full transition-all shadow-2xl active:scale-90 cursor-pointer"
-                    title="Next Slide"
-                  >
-                    <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
-                  </button>
-                </>
-              )}
-            </div>
-
-            {/* Bottom Mini Thumbnails Strip */}
-            {total > 1 && (
-              <div
-                ref={fullscreenThumbnailsRef}
-                className="shrink-0 py-2.5 px-4 border-t border-neutral-800/80 bg-neutral-950/90 backdrop-blur-md overflow-x-auto flex justify-center space-x-2 z-30 scrollbar-none"
-              >
-                {validItems.map((item, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => goToIndex(idx)}
-                    className={`w-12 h-8 sm:w-16 sm:h-11 shrink-0 border overflow-hidden rounded-xs transition-all cursor-pointer ${
-                      idx === currentIndex
-                        ? 'border-teal-400 ring-2 ring-teal-500/40 scale-105'
-                        : 'border-neutral-800 opacity-50 hover:opacity-100'
-                    }`}
-                  >
-                    <img src={item} alt="" className="w-full h-full object-cover" />
-                  </button>
-                ))}
-              </div>
+                    {validItems.map((item, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => goToIndex(idx)}
+                        className={`w-12 h-8 sm:w-16 sm:h-11 shrink-0 border overflow-hidden rounded-xs transition-all cursor-pointer ${
+                          idx === currentIndex
+                            ? 'border-teal-400 ring-2 ring-teal-500/40 scale-105'
+                            : 'border-neutral-800 opacity-50 hover:opacity-100'
+                        }`}
+                      >
+                        <img src={item} alt="" className="w-full h-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
             )}
-          </motion.div>
+          </AnimatePresence>,
+          document.body
         )}
-      </AnimatePresence>
     </div>
   );
 };

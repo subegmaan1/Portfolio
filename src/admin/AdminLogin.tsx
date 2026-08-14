@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { adminLogin } from '../lib/api';
-import { Lock, ArrowRight, ShieldAlert } from 'lucide-react';
+import { Lock, ArrowRight, ShieldAlert, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface AdminLoginProps {
@@ -10,6 +10,7 @@ interface AdminLoginProps {
 
 export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onCancel }) => {
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -63,7 +64,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onCancel }) =
           </div>
           <button
             onClick={onCancel}
-            className="font-mono text-xs text-neutral-500 hover:text-neutral-300"
+            className="font-mono text-xs text-neutral-500 hover:text-neutral-300 cursor-pointer"
           >
             Cancel
           </button>
@@ -78,28 +79,29 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onCancel }) =
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <div className="flex justify-between items-center mb-2">
-              <label className="block font-mono text-xs text-neutral-400 uppercase">
-                Admin Password
-              </label>
+            <label className="block font-mono text-xs text-neutral-400 uppercase mb-2">
+              Admin Password
+            </label>
+            <div className="relative flex items-center">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="Enter password..."
+                className="w-full px-4 py-3 pr-11 bg-neutral-950 border border-neutral-800 text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-teal-500 font-mono text-sm"
+                autoFocus
+                required
+                autoComplete="current-password"
+              />
               <button
                 type="button"
-                onClick={() => setPassword('subeg2026')}
-                className="font-mono text-[10px] text-teal-400/80 hover:text-teal-300 transition-colors cursor-pointer"
-                title="Autofill default password"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 p-1 text-neutral-500 hover:text-neutral-300 transition-colors cursor-pointer"
+                title={showPassword ? 'Hide password' : 'Show password'}
               >
-                (Default: subeg2026)
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="Enter admin password (subeg2026)..."
-              className="w-full px-4 py-3 bg-neutral-950 border border-neutral-800 text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-teal-500 font-mono text-sm"
-              autoFocus
-              required
-            />
           </div>
 
           <div className="pt-2 flex justify-between items-center">
