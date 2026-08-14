@@ -415,7 +415,8 @@ export function subscribeContactData(callback: (contact: ContactData) => void): 
         callback({
           ...initialContactData,
           ...parsed,
-          additionalLinks: Array.isArray(parsed.additionalLinks) ? parsed.additionalLinks : initialContactData.additionalLinks
+          additionalLinks: Array.isArray(parsed.additionalLinks) ? parsed.additionalLinks : initialContactData.additionalLinks,
+          socialLinks: Array.isArray(parsed.socialLinks) ? parsed.socialLinks : (initialContactData.socialLinks || [])
         });
         return;
       }
@@ -441,7 +442,8 @@ export function subscribeContactData(callback: (contact: ContactData) => void): 
               const data: ContactData = {
                 ...initialContactData,
                 ...parsed,
-                additionalLinks: Array.isArray(parsed.additionalLinks) ? parsed.additionalLinks : initialContactData.additionalLinks
+                additionalLinks: Array.isArray(parsed.additionalLinks) ? parsed.additionalLinks : initialContactData.additionalLinks,
+                socialLinks: Array.isArray(parsed.socialLinks) ? parsed.socialLinks : (initialContactData.socialLinks || [])
               };
               callback(data);
               setDoc(docRef, data, { merge: true }).catch(() => {});
@@ -457,7 +459,8 @@ export function subscribeContactData(callback: (contact: ContactData) => void): 
         const data: ContactData = {
           ...initialContactData,
           ...raw,
-          additionalLinks: Array.isArray(raw.additionalLinks) ? raw.additionalLinks : initialContactData.additionalLinks
+          additionalLinks: Array.isArray(raw.additionalLinks) ? raw.additionalLinks : initialContactData.additionalLinks,
+          socialLinks: Array.isArray(raw.socialLinks) ? raw.socialLinks : (initialContactData.socialLinks || [])
         };
         try {
           localStorage.setItem('subeg_contact_data', JSON.stringify(data));
@@ -485,7 +488,8 @@ export async function fetchContactData(): Promise<ContactData> {
         const data: ContactData = {
           ...initialContactData,
           ...raw,
-          additionalLinks: Array.isArray(raw.additionalLinks) ? raw.additionalLinks : initialContactData.additionalLinks
+          additionalLinks: Array.isArray(raw.additionalLinks) ? raw.additionalLinks : initialContactData.additionalLinks,
+          socialLinks: Array.isArray(raw.socialLinks) ? raw.socialLinks : (initialContactData.socialLinks || [])
         };
         try {
           localStorage.setItem('subeg_contact_data', JSON.stringify(data));
@@ -505,7 +509,8 @@ export async function fetchContactData(): Promise<ContactData> {
         const data: ContactData = {
           ...initialContactData,
           ...serverData,
-          additionalLinks: Array.isArray(serverData.additionalLinks) ? serverData.additionalLinks : initialContactData.additionalLinks
+          additionalLinks: Array.isArray(serverData.additionalLinks) ? serverData.additionalLinks : initialContactData.additionalLinks,
+          socialLinks: Array.isArray(serverData.socialLinks) ? serverData.socialLinks : (initialContactData.socialLinks || [])
         };
         try {
           localStorage.setItem('subeg_contact_data', JSON.stringify(data));
@@ -522,7 +527,8 @@ export async function fetchContactData(): Promise<ContactData> {
       return {
         ...initialContactData,
         ...parsed,
-        additionalLinks: Array.isArray(parsed.additionalLinks) ? parsed.additionalLinks : initialContactData.additionalLinks
+        additionalLinks: Array.isArray(parsed.additionalLinks) ? parsed.additionalLinks : initialContactData.additionalLinks,
+        socialLinks: Array.isArray(parsed.socialLinks) ? parsed.socialLinks : (initialContactData.socialLinks || [])
       };
     }
   } catch {}
@@ -906,7 +912,10 @@ export async function saveContactApi(data: Partial<ContactData>): Promise<Contac
     ...data,
     additionalLinks: data.additionalLinks !== undefined
       ? (Array.isArray(data.additionalLinks) ? data.additionalLinks : [])
-      : current.additionalLinks
+      : (Array.isArray(current.additionalLinks) ? current.additionalLinks : []),
+    socialLinks: data.socialLinks !== undefined
+      ? (Array.isArray(data.socialLinks) ? data.socialLinks : [])
+      : (Array.isArray(current.socialLinks) ? current.socialLinks : [])
   };
 
   try {

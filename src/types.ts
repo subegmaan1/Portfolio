@@ -43,10 +43,28 @@ export interface AboutData {
   photoUrl?: string;
 }
 
+export interface ContactLink {
+  label: string;
+  url: string;
+}
+
 export interface ContactData {
+  tagline?: string;
+  title?: string;
+  statement?: string;
   email: string;
+  emailLabel?: string;
+  phone?: string;
+  phoneLabel?: string;
   location: string;
-  additionalLinks: { label: string; url: string }[];
+  locationLabel?: string;
+  availabilityStatus?: string;
+  responseTime?: string;
+  representationHeading?: string;
+  additionalLinks: ContactLink[];
+  socialLinks?: ContactLink[];
+  footerCopyright?: string;
+  footerSubtitle?: string;
 }
 
 export interface MediaItem {
