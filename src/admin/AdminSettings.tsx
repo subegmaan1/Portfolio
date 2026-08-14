@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { SiteSettings } from '../types';
-import { resetDemoDataApi, saveSettingsApi, flushAllMockDataApi } from '../lib/api';
-import { Save, RefreshCw, Key, Trash2, Sparkles, CheckCircle } from 'lucide-react';
+import { exportFullBackup, importFullBackup, resetDemoDataApi, saveSettingsApi, getFirestoreStatus } from '../lib/api';
+import { Save, RefreshCw, Key, ShieldCheck, Download, Upload, Database, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 interface AdminSettingsProps {
   settings: SiteSettings;
-  onRefreshSettings: (newSettings?: SiteSettings) => void;
+  onRefreshSettings: () => void;
   onRefreshAllData: () => void;
 }
 
@@ -14,23 +14,18 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
   onRefreshSettings,
   onRefreshAllData
 }) => {
-  const [siteTitle, setSiteTitle] = useState(settings?.siteTitle || '');
-  const [siteDescription, setSiteDescription] = useState(settings?.siteDescription || '');
-  const [contactEmail, setContactEmail] = useState(settings?.contactEmail || '');
-  const [isDirty, setIsDirty] = useState(false);
+  const [siteTitle, setSiteTitle] = useState(settings.siteTitle || '');
+  const [siteDescription, setSiteDescription] = useState(settings.siteDescription || '');
+  const [contactEmail, setContactEmail] = useState(settings.contactEmail || '');
 
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const [flushing, setFlushing] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [message, setMessage] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (settings && !isDirty) {
-      setSiteTitle(settings.siteTitle || '');
-      setSiteDescription(settings.siteDescription || '');
-      setContactEmail(settings.contactEmail || '');
-    }
-  }, [settings, isDirty]);
+  const status = getFirestoreStatus();
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,37 +33,62 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
     setMessage('');
 
     try {
-      const saved = await saveSettingsApi({
+      await saveSettingsApi({
         siteTitle,
         siteDescription,
         contactEmail
       });
-      setIsDirty(false);
-      setMessage('Site settings updated successfully!');
-      onRefreshSettings(saved);
-      setTimeout(() => setMessage(''), 4000);
+      setMessage('Site settings updated and synced!');
+      onRefreshSettings();
     } catch {
-      setMessage('Settings updated in local and cloud stores.');
+      setMessage('Failed to update site settings.');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleFlushOldData = async () => {
-    if (confirm('Flush all leftover old demo projects, deleted ghost data, and temporary cache from all devices?')) {
-      setFlushing(true);
-      setMessage('');
-      try {
-        await flushAllMockDataApi();
-        setMessage('Successfully flushed all old demo data, deleted ghosts, and caches!');
+  const handleExportBackup = async () => {
+    setExporting(true);
+    setMessage('');
+    try {
+      const json = await exportFullBackup();
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `subeg-singh-portfolio-backup-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setMessage('Database backup downloaded successfully!');
+    } catch (e) {
+      alert('Failed to export backup');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleImportBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImporting(true);
+    setMessage('');
+    try {
+      const text = await file.text();
+      const ok = await importFullBackup(text);
+      if (ok) {
+        setMessage('Database backup successfully imported & synced!');
         onRefreshAllData();
-        setTimeout(() => setMessage(''), 5000);
-      } catch {
-        setMessage('Flush operation completed.');
-        onRefreshAllData();
-      } finally {
-        setFlushing(false);
+      } else {
+        alert('Failed to parse backup JSON file.');
       }
+    } catch (err) {
+      alert('Error importing backup file.');
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -96,7 +116,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
             SYSTEM SETTINGS
           </h1>
           <p className="font-mono text-xs text-neutral-400 mt-1">
-            Global site configuration, credentials documentation & database management
+            Global site configuration, multi-tier database status & backup management
           </p>
         </div>
 
@@ -112,16 +132,79 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
       </div>
 
       {message && (
-        <div className="p-3 bg-neutral-900 border border-neutral-700 text-neutral-200 flex items-center space-x-2">
-          <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+        <div className="p-4 bg-neutral-900 border border-emerald-600/50 text-emerald-300 flex items-center space-x-3">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{message}</span>
         </div>
       )}
 
+      {/* Storage & Sync Status Card */}
+      <div className="bg-neutral-900/80 p-6 border border-neutral-800 space-y-4">
+        <h2 className="font-syne font-bold text-sm text-neutral-200 uppercase flex items-center space-x-2">
+          <Database className="w-4 h-4 text-emerald-400" />
+          <span>Data Storage & Multi-Device Sync Engine</span>
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+          <div className="p-4 bg-neutral-950 border border-neutral-800 space-y-1.5">
+            <div className="text-neutral-400 uppercase text-[10px] tracking-wider">Cloud Server Storage</div>
+            <div className="text-emerald-400 font-bold flex items-center space-x-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-pulse"></span>
+              <span>Online & Synced (JSON + Disk Media)</span>
+            </div>
+            <p className="text-neutral-500 text-[11px]">Primary persistent storage running on high-speed server container.</p>
+          </div>
+
+          <div className="p-4 bg-neutral-950 border border-neutral-800 space-y-1.5">
+            <div className="text-neutral-400 uppercase text-[10px] tracking-wider">Cloud Firestore Engine</div>
+            <div className="text-neutral-200 font-bold flex items-center space-x-1.5">
+              <span className="w-2 h-2 rounded-full bg-blue-400 inline-block"></span>
+              <span>{status.mode}</span>
+            </div>
+            <p className="text-neutral-500 text-[11px]">Protected by auto-failover to avoid Firebase daily read quota freezes.</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Backup & Restore Tools */}
+      <div className="bg-neutral-900/60 p-6 border border-neutral-800 space-y-4">
+        <h2 className="font-syne font-bold text-sm text-neutral-200 uppercase flex items-center space-x-2">
+          <Download className="w-4 h-4 text-cyan-400" />
+          <span>Portfolio Backup & Restore (JSON)</span>
+        </h2>
+        <p className="text-neutral-400 font-light leading-relaxed">
+          Download a complete backup snapshot of all your projects, bio copy, contact information, and media library to your computer, or restore a previous snapshot at any time.
+        </p>
+
+        <div className="flex flex-wrap items-center gap-3 pt-2">
+          <button
+            type="button"
+            onClick={handleExportBackup}
+            disabled={exporting}
+            className="px-5 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-100 border border-neutral-700 uppercase font-bold tracking-wider flex items-center space-x-2 transition-colors"
+          >
+            <Download className="w-4 h-4 text-cyan-400" />
+            <span>{exporting ? 'Generating...' : 'Download Full Backup (.json)'}</span>
+          </button>
+
+          <label className="px-5 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-100 border border-neutral-700 uppercase font-bold tracking-wider flex items-center space-x-2 transition-colors cursor-pointer">
+            <Upload className="w-4 h-4 text-amber-400" />
+            <span>{importing ? 'Restoring...' : 'Restore from Backup File'}</span>
+            <input
+              type="file"
+              accept=".json"
+              ref={fileInputRef}
+              onChange={handleImportBackup}
+              className="hidden"
+            />
+          </label>
+        </div>
+      </div>
+
+      {/* Site Metadata Form */}
       <form onSubmit={handleSave} className="space-y-6">
         <div className="bg-neutral-900/60 p-6 border border-neutral-800 space-y-4">
           <h2 className="font-syne font-bold text-sm text-neutral-200 uppercase">
-            Site Metadata
+            Site Metadata & Header
           </h2>
 
           <div>
@@ -129,11 +212,8 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
             <input
               type="text"
               value={siteTitle}
-              onChange={e => {
-                setSiteTitle(e.target.value);
-                setIsDirty(true);
-              }}
-              className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100"
+              onChange={e => setSiteTitle(e.target.value)}
+              className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 focus:border-neutral-500 outline-none"
             />
           </div>
 
@@ -141,36 +221,23 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
             <label className="block text-neutral-400 uppercase mb-2">Site SEO Description</label>
             <textarea
               value={siteDescription}
-              onChange={e => {
-                setSiteDescription(e.target.value);
-                setIsDirty(true);
-              }}
+              onChange={e => setSiteDescription(e.target.value)}
               rows={2}
-              className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100"
+              className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 focus:border-neutral-500 outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-neutral-400 uppercase mb-2">Contact / Inquiries Email</label>
+            <input
+              type="email"
+              value={contactEmail}
+              onChange={e => setContactEmail(e.target.value)}
+              className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 focus:border-neutral-500 outline-none"
             />
           </div>
         </div>
       </form>
-
-      {/* Flush Ghost / Deleted Data */}
-      <div className="bg-neutral-900/60 p-6 border border-neutral-800 space-y-4">
-        <h2 className="font-syne font-bold text-sm text-neutral-200 uppercase flex items-center space-x-2">
-          <Trash2 className="w-4 h-4 text-amber-400" />
-          <span>Flush Deleted &amp; Old Demo Data</span>
-        </h2>
-        <p className="text-neutral-400 font-light leading-relaxed">
-          Completely flush deleted projects, older mock records, and local storage caches so only your real, current portfolio projects and media remain.
-        </p>
-        <button
-          type="button"
-          onClick={handleFlushOldData}
-          disabled={flushing}
-          className="px-5 py-2.5 bg-amber-950/40 border border-amber-800/80 text-amber-300 hover:bg-amber-900 hover:text-amber-100 uppercase font-bold transition-colors flex items-center space-x-2"
-        >
-          <Sparkles className="w-4 h-4" />
-          <span>{flushing ? 'Flushing Old Data...' : 'Flush All Old & Deleted Mock Data'}</span>
-        </button>
-      </div>
 
       {/* Admin Password Instructions */}
       <div className="bg-neutral-900/60 p-6 border border-neutral-800 space-y-3">
@@ -179,10 +246,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
           <span>Admin Access Security</span>
         </h2>
         <p className="text-neutral-300 leading-relaxed font-light">
-          Admin authentication is securely validated via encrypted session cookies against the server environment credentials (<code className="bg-neutral-800 px-1.5 py-0.5 text-amber-300">ADMIN_PASSWORD</code>).
-        </p>
-        <p className="text-neutral-400 font-light text-[11px]">
-          To update your administrator password, modify the secret environment variable in your project configuration.
+          Admin authentication is validated via encrypted session cookies against the server environment credentials (<code className="bg-neutral-800 px-1.5 py-0.5 text-amber-300">ADMIN_PASSWORD</code>). Default password: <code className="bg-neutral-800 px-1.5 py-0.5 text-amber-300">subeg2026</code>.
         </p>
       </div>
 
@@ -207,3 +271,4 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
     </div>
   );
 };
+

@@ -65,7 +65,6 @@ export async function fileToDataUrl(file: File): Promise<string> {
       try {
         objectUrl = URL.createObjectURL(file);
       } catch {
-        // Fallback to FileReader if createObjectURL fails
         const fallbackReader = new FileReader();
         fallbackReader.onload = () => resolve(fallbackReader.result as string);
         fallbackReader.onerror = () => resolve('');
@@ -75,7 +74,6 @@ export async function fileToDataUrl(file: File): Promise<string> {
 
       const img = new Image();
 
-      // Guard with 6-second timeout so image loading never hangs indefinitely
       timeoutId = setTimeout(() => {
         cleanup();
         const reader = new FileReader();
@@ -93,11 +91,9 @@ export async function fileToDataUrl(file: File): Promise<string> {
             return;
           }
 
-          // Strict dimension and aspect ratio bounding
           const maxDim = 1280;
-          const maxTotalPixels = 1280 * 800; // ~1MP max to prevent memory spikes on extreme narrow/panoramic images
+          const maxTotalPixels = 1280 * 800;
 
-          // Scale down if either dimension exceeds maxDim
           if (width > maxDim || height > maxDim) {
             if (width > height) {
               height = Math.round((height * maxDim) / width);
@@ -108,7 +104,6 @@ export async function fileToDataUrl(file: File): Promise<string> {
             }
           }
 
-          // Handle extreme narrow aspect ratios (panoramas or tall screenshots)
           if (width * height > maxTotalPixels) {
             const scale = Math.sqrt(maxTotalPixels / (width * height));
             width = Math.max(1, Math.round(width * scale));
@@ -124,7 +119,6 @@ export async function fileToDataUrl(file: File): Promise<string> {
             return;
           }
 
-          // Fill white background for transparent PNGs converting to JPEG
           ctx.fillStyle = '#121212';
           ctx.fillRect(0, 0, width, height);
 
@@ -132,17 +126,14 @@ export async function fileToDataUrl(file: File): Promise<string> {
           ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(img, 0, 0, width, height);
 
-          // Fast adaptive quality compression (aiming for 40KB - 80KB)
           let quality = 0.74;
           let optimized = canvas.toDataURL('image/jpeg', quality);
 
-          // Step 2: Adaptive reduction if payload exceeds 90KB
           if (optimized.length > 95000) {
             quality = 0.60;
             optimized = canvas.toDataURL('image/jpeg', quality);
           }
 
-          // Step 3: Progressive resize if still large (e.g. detailed textures)
           if (optimized.length > 95000) {
             const downscaledCanvas = document.createElement('canvas');
             downscaledCanvas.width = Math.max(1, Math.round(width * 0.75));
@@ -188,491 +179,416 @@ export async function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+// Track Firestore availability status to avoid repeated quota exhaustion loops
+let isFirestoreAvailable = true;
+let lastFirestoreCheck = 0;
+
+export function getFirestoreStatus(): { available: boolean; mode: string } {
+  return {
+    available: isFirestoreAvailable,
+    mode: isFirestoreAvailable ? 'Cloud Firestore & Server Sync' : 'High-Speed Server & Local Cache (Quota Safeguard Active)'
+  };
+}
+
+// Helper to fetch directly from Server Backend API
+async function fetchFromServer<T>(endpoint: string, fallback: T): Promise<T> {
+  try {
+    const res = await fetch(`/api/${endpoint}`, {
+      headers: getAuthHeaders()
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn(`Server API /api/${endpoint} unreachable:`, err);
+  }
+  return fallback;
+}
+
+// Helper to seed initial data into Firestore if collection is empty
+let isSeedingProjects = false;
+async function seedInitialProjectsIfNeeded(): Promise<Project[]> {
+  if (isSeedingProjects) return initialProjects;
+  isSeedingProjects = true;
+  try {
+    if (db && isFirestoreAvailable) {
+      const batch = writeBatch(db);
+      initialProjects.forEach((proj, idx) => {
+        const docRef = doc(db, 'projects', proj.id);
+        batch.set(docRef, { ...proj, order: idx });
+      });
+      await batch.commit();
+    }
+    return initialProjects;
+  } catch (err: any) {
+    if (err?.code === 'resource-exhausted') {
+      isFirestoreAvailable = false;
+    }
+    return initialProjects;
+  } finally {
+    isSeedingProjects = false;
+  }
+}
+
 // Subscribe to real-time project updates across devices
 export function subscribeProjects(callback: (projects: Project[]) => void): () => void {
-  if (!db) {
-    try {
-      const local = localStorage.getItem('subeg_projects_data');
-      callback(local ? JSON.parse(local) : []);
-    } catch {
-      callback([]);
-    }
-    return () => {};
-  }
-  try {
-    const q = query(collection(db, 'projects'));
-    return onSnapshot(
-      q,
-      snapshot => {
-        const docsData: (Project & { order?: number })[] = snapshot.docs.map(
-          d => ({ id: d.id, ...d.data() } as Project & { order?: number })
-        );
-        // Sort by sortOrder or order
-        docsData.sort((a, b) => (a.sortOrder ?? a.order ?? 0) - (b.sortOrder ?? b.order ?? 0));
-        try {
-          localStorage.setItem('subeg_projects_data', JSON.stringify(docsData));
-        } catch {}
-        callback(docsData);
-      },
-      error => {
-        console.warn('Firestore projects snapshot notice, using cached data:', error);
-        try {
-          const local = localStorage.getItem('subeg_projects_data');
-          callback(local ? JSON.parse(local) : []);
-        } catch {
-          callback([]);
-        }
-      }
-    );
-  } catch (err) {
-    console.warn('Firestore subscribe projects failed:', err);
-    try {
-      const local = localStorage.getItem('subeg_projects_data');
-      callback(local ? JSON.parse(local) : []);
-    } catch {
-      callback([]);
-    }
-    return () => {};
-  }
-}
-
-export async function fetchProjects(category?: string): Promise<Project[]> {
-  try {
-    if (db) {
-      const querySnapshot = await getDocs(collection(db, 'projects'));
-      const projects: (Project & { order?: number })[] = querySnapshot.docs.map(
-        d => ({ id: d.id, ...d.data() } as Project & { order?: number })
-      );
-      projects.sort((a, b) => (a.sortOrder ?? a.order ?? 0) - (b.sortOrder ?? b.order ?? 0));
-      try {
-        localStorage.setItem('subeg_projects_data', JSON.stringify(projects));
-      } catch {}
-
-      return category && category !== 'ALL' ? projects.filter(p => p.category === category) : projects;
-    }
-  } catch (err) {
-    console.warn('Firestore fetch projects error, using cached data:', err);
-  }
-
+  // First, deliver any fast cached data immediately
   try {
     const local = localStorage.getItem('subeg_projects_data');
-    const allProjects: Project[] = local ? JSON.parse(local) : [];
-    return category && category !== 'ALL' ? allProjects.filter(p => p.category === category) : allProjects;
-  } catch {
-    return [];
-  }
-}
-
-export async function fetchProjectByIdOrSlug(idOrSlug: string): Promise<Project> {
-  try {
-    if (db) {
-      const docRef = doc(db, 'projects', idOrSlug);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        return { id: docSnap.id, ...docSnap.data() } as Project;
+    if (local) {
+      const parsed = JSON.parse(local);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        callback(parsed);
       }
     }
   } catch {}
 
+  // Fetch from server / Firestore
+  fetchProjects().then(callback);
+
+  // If Firestore is available and connected, attach snapshot listener with quota protection
+  if (db && isFirestoreAvailable) {
+    try {
+      const q = query(collection(db, 'projects'));
+      const unsub = onSnapshot(
+        q,
+        async snapshot => {
+          if (snapshot.empty) {
+            const serverProjects = await fetchFromServer<Project[]>('projects', []);
+            if (serverProjects.length > 0) {
+              callback(serverProjects);
+              return;
+            }
+            const seeded = await seedInitialProjectsIfNeeded();
+            callback(seeded);
+            return;
+          }
+          const docsData: (Project & { order?: number })[] = snapshot.docs.map(
+            d => ({ id: d.id, ...d.data() } as Project & { order?: number })
+          );
+          docsData.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+          try {
+            localStorage.setItem('subeg_projects_data', JSON.stringify(docsData));
+          } catch {}
+          callback(docsData);
+        },
+        async error => {
+          if (error?.code === 'resource-exhausted') {
+            isFirestoreAvailable = false;
+          }
+          // On Firestore quota notice, fallback to Server API
+          const serverProjects = await fetchFromServer<Project[]>('projects', []);
+          if (serverProjects.length > 0) {
+            callback(serverProjects);
+          }
+        }
+      );
+      return unsub;
+    } catch {
+      // Fallback
+    }
+  }
+
+  // Periodic refresh from server API for multi-device sync if Firestore is paused
+  const intervalId = setInterval(async () => {
+    const serverProjects = await fetchFromServer<Project[]>('projects', []);
+    if (serverProjects && serverProjects.length > 0) {
+      callback(serverProjects);
+    }
+  }, 10000);
+
+  return () => clearInterval(intervalId);
+}
+
+export async function fetchProjects(category?: string): Promise<Project[]> {
+  // 1. Try Firestore if available
+  if (db && isFirestoreAvailable) {
+    try {
+      const querySnapshot = await getDocs(collection(db, 'projects'));
+      if (!querySnapshot.empty) {
+        const projects: (Project & { order?: number })[] = querySnapshot.docs.map(
+          d => ({ id: d.id, ...d.data() } as Project & { order?: number })
+        );
+        projects.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        try {
+          localStorage.setItem('subeg_projects_data', JSON.stringify(projects));
+        } catch {}
+        return category && category !== 'ALL' ? projects.filter(p => p.category === category) : projects;
+      }
+    } catch (err: any) {
+      if (err?.code === 'resource-exhausted') {
+        isFirestoreAvailable = false;
+      }
+    }
+  }
+
+  // 2. Fetch from Express Server Backend
+  try {
+    const serverProjects = await fetchFromServer<Project[]>('projects', []);
+    if (serverProjects && serverProjects.length > 0) {
+      try {
+        localStorage.setItem('subeg_projects_data', JSON.stringify(serverProjects));
+      } catch {}
+      return category && category !== 'ALL' ? serverProjects.filter(p => p.category === category) : serverProjects;
+    }
+  } catch {}
+
+  // 3. Fallback to LocalStorage
+  try {
+    const local = localStorage.getItem('subeg_projects_data');
+    if (local) {
+      const parsed = JSON.parse(local);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return category && category !== 'ALL' ? parsed.filter((p: Project) => p.category === category) : parsed;
+      }
+    }
+  } catch {}
+
+  // 4. Default Initial Projects
+  return category && category !== 'ALL' ? initialProjects.filter(p => p.category === category) : initialProjects;
+}
+
+export async function fetchProjectByIdOrSlug(idOrSlug: string): Promise<Project> {
   const all = await fetchProjects();
   const found = all.find(p => p.id === idOrSlug || p.slug === idOrSlug);
   if (found) return found;
+
+  // Try direct server endpoint
+  try {
+    const proj = await fetchFromServer<Project | null>(`projects/${idOrSlug}`, null);
+    if (proj) return proj;
+  } catch {}
+
   throw new Error('Project not found');
 }
 
 // Subscribe to About data real-time
 export function subscribeAboutData(callback: (about: AboutData) => void): () => void {
-  const loadFallback = () => {
-    try {
-      const local = localStorage.getItem('subeg_about_data');
-      if (local) {
-        const parsed = JSON.parse(local);
-        callback({
-          ...initialAboutData,
-          ...parsed,
-          capabilities: Array.isArray(parsed.capabilities) ? parsed.capabilities : initialAboutData.capabilities
-        });
-        return;
-      }
-    } catch {}
-    callback(initialAboutData);
-  };
-
-  if (!db) {
-    loadFallback();
-    return () => {};
-  }
-
   try {
-    const docRef = doc(db, 'about', 'main');
-    return onSnapshot(
-      docRef,
-      async docSnap => {
-        if (!docSnap.exists()) {
-          try {
-            const local = localStorage.getItem('subeg_about_data');
-            if (local) {
-              const parsed = JSON.parse(local);
-              const data: AboutData = {
-                ...initialAboutData,
-                ...parsed,
-                capabilities: Array.isArray(parsed.capabilities) ? parsed.capabilities : initialAboutData.capabilities
-              };
-              callback(data);
-              setDoc(docRef, data, { merge: true }).catch(() => {});
-              return;
-            }
-          } catch {}
-          callback(initialAboutData);
-          setDoc(docRef, initialAboutData, { merge: true }).catch(() => {});
-          return;
-        }
+    const local = localStorage.getItem('subeg_about_data');
+    if (local) callback(JSON.parse(local));
+  } catch {}
 
-        const raw = docSnap.data() as AboutData;
-        const data: AboutData = {
-          ...initialAboutData,
-          ...raw,
-          capabilities: Array.isArray(raw.capabilities) ? raw.capabilities : initialAboutData.capabilities
-        };
-        try {
-          localStorage.setItem('subeg_about_data', JSON.stringify(data));
-        } catch {}
-        callback(data);
-      },
-      error => {
-        console.warn('Firestore subscribe about notice:', error);
-        loadFallback();
-      }
-    );
-  } catch {
-    loadFallback();
-    return () => {};
+  fetchAboutData().then(callback);
+
+  if (db && isFirestoreAvailable) {
+    try {
+      const docRef = doc(db, 'about', 'main');
+      return onSnapshot(
+        docRef,
+        async docSnap => {
+          if (docSnap.exists()) {
+            const data = docSnap.data() as AboutData;
+            try {
+              localStorage.setItem('subeg_about_data', JSON.stringify(data));
+            } catch {}
+            callback(data);
+          }
+        },
+        async err => {
+          if (err?.code === 'resource-exhausted') isFirestoreAvailable = false;
+          const serverAbout = await fetchFromServer<AboutData>('about', initialAboutData);
+          callback(serverAbout);
+        }
+      );
+    } catch {}
   }
+
+  return () => {};
 }
 
 export async function fetchAboutData(): Promise<AboutData> {
-  if (db) {
+  if (db && isFirestoreAvailable) {
     try {
       const docRef = doc(db, 'about', 'main');
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        const raw = docSnap.data() as AboutData;
-        const data: AboutData = {
-          ...initialAboutData,
-          ...raw,
-          capabilities: Array.isArray(raw.capabilities) ? raw.capabilities : initialAboutData.capabilities
-        };
+        const data = docSnap.data() as AboutData;
         try {
           localStorage.setItem('subeg_about_data', JSON.stringify(data));
         } catch {}
         return data;
       }
-    } catch (err) {
-      console.warn('Firestore fetch about notice:', err);
+    } catch (err: any) {
+      if (err?.code === 'resource-exhausted') isFirestoreAvailable = false;
     }
   }
 
+  // Fetch from Server API
   try {
-    const res = await fetch('/api/about');
-    if (res.ok) {
-      const serverData = await res.json();
-      if (serverData && typeof serverData === 'object') {
-        const data: AboutData = {
-          ...initialAboutData,
-          ...serverData,
-          capabilities: Array.isArray(serverData.capabilities) ? serverData.capabilities : initialAboutData.capabilities
-        };
-        try {
-          localStorage.setItem('subeg_about_data', JSON.stringify(data));
-        } catch {}
-        return data;
-      }
+    const serverAbout = await fetchFromServer<AboutData>('about', initialAboutData);
+    if (serverAbout && (serverAbout.name || serverAbout.introduction)) {
+      try {
+        localStorage.setItem('subeg_about_data', JSON.stringify(serverAbout));
+      } catch {}
+      return serverAbout;
     }
   } catch {}
 
-  try {
-    const local = localStorage.getItem('subeg_about_data');
-    if (local) {
-      const parsed = JSON.parse(local);
-      return {
-        ...initialAboutData,
-        ...parsed,
-        capabilities: Array.isArray(parsed.capabilities) ? parsed.capabilities : initialAboutData.capabilities
-      };
-    }
-  } catch {}
-
-  return initialAboutData;
+  const local = localStorage.getItem('subeg_about_data');
+  return local ? JSON.parse(local) : initialAboutData;
 }
 
 // Subscribe to Contact data real-time
 export function subscribeContactData(callback: (contact: ContactData) => void): () => void {
-  const loadFallback = () => {
-    try {
-      const local = localStorage.getItem('subeg_contact_data');
-      if (local) {
-        const parsed = JSON.parse(local);
-        callback({
-          ...initialContactData,
-          ...parsed,
-          additionalLinks: Array.isArray(parsed.additionalLinks) ? parsed.additionalLinks : initialContactData.additionalLinks,
-          socialLinks: Array.isArray(parsed.socialLinks) ? parsed.socialLinks : (initialContactData.socialLinks || [])
-        });
-        return;
-      }
-    } catch {}
-    callback(initialContactData);
-  };
-
-  if (!db) {
-    loadFallback();
-    return () => {};
-  }
-
   try {
-    const docRef = doc(db, 'contact', 'main');
-    return onSnapshot(
-      docRef,
-      async docSnap => {
-        if (!docSnap.exists()) {
-          try {
-            const local = localStorage.getItem('subeg_contact_data');
-            if (local) {
-              const parsed = JSON.parse(local);
-              const data: ContactData = {
-                ...initialContactData,
-                ...parsed,
-                additionalLinks: Array.isArray(parsed.additionalLinks) ? parsed.additionalLinks : initialContactData.additionalLinks,
-                socialLinks: Array.isArray(parsed.socialLinks) ? parsed.socialLinks : (initialContactData.socialLinks || [])
-              };
-              callback(data);
-              setDoc(docRef, data, { merge: true }).catch(() => {});
-              return;
-            }
-          } catch {}
-          callback(initialContactData);
-          setDoc(docRef, initialContactData, { merge: true }).catch(() => {});
-          return;
-        }
+    const local = localStorage.getItem('subeg_contact_data');
+    if (local) callback(JSON.parse(local));
+  } catch {}
 
-        const raw = docSnap.data() as ContactData;
-        const data: ContactData = {
-          ...initialContactData,
-          ...raw,
-          additionalLinks: Array.isArray(raw.additionalLinks) ? raw.additionalLinks : initialContactData.additionalLinks,
-          socialLinks: Array.isArray(raw.socialLinks) ? raw.socialLinks : (initialContactData.socialLinks || [])
-        };
-        try {
-          localStorage.setItem('subeg_contact_data', JSON.stringify(data));
-        } catch {}
-        callback(data);
-      },
-      error => {
-        console.warn('Firestore subscribe contact notice:', error);
-        loadFallback();
-      }
-    );
-  } catch {
-    loadFallback();
-    return () => {};
+  fetchContactData().then(callback);
+
+  if (db && isFirestoreAvailable) {
+    try {
+      const docRef = doc(db, 'contact', 'main');
+      return onSnapshot(
+        docRef,
+        async docSnap => {
+          if (docSnap.exists()) {
+            const data = docSnap.data() as ContactData;
+            try {
+              localStorage.setItem('subeg_contact_data', JSON.stringify(data));
+            } catch {}
+            callback(data);
+          }
+        },
+        async err => {
+          if (err?.code === 'resource-exhausted') isFirestoreAvailable = false;
+          const serverContact = await fetchFromServer<ContactData>('contact', initialContactData);
+          callback(serverContact);
+        }
+      );
+    } catch {}
   }
+
+  return () => {};
 }
 
 export async function fetchContactData(): Promise<ContactData> {
-  if (db) {
+  if (db && isFirestoreAvailable) {
     try {
       const docRef = doc(db, 'contact', 'main');
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        const raw = docSnap.data() as ContactData;
-        const data: ContactData = {
-          ...initialContactData,
-          ...raw,
-          additionalLinks: Array.isArray(raw.additionalLinks) ? raw.additionalLinks : initialContactData.additionalLinks,
-          socialLinks: Array.isArray(raw.socialLinks) ? raw.socialLinks : (initialContactData.socialLinks || [])
-        };
+        const data = docSnap.data() as ContactData;
         try {
           localStorage.setItem('subeg_contact_data', JSON.stringify(data));
         } catch {}
         return data;
       }
-    } catch (err) {
-      console.warn('Firestore fetch contact notice:', err);
+    } catch (err: any) {
+      if (err?.code === 'resource-exhausted') isFirestoreAvailable = false;
     }
   }
 
   try {
-    const res = await fetch('/api/contact');
-    if (res.ok) {
-      const serverData = await res.json();
-      if (serverData && typeof serverData === 'object') {
-        const data: ContactData = {
-          ...initialContactData,
-          ...serverData,
-          additionalLinks: Array.isArray(serverData.additionalLinks) ? serverData.additionalLinks : initialContactData.additionalLinks,
-          socialLinks: Array.isArray(serverData.socialLinks) ? serverData.socialLinks : (initialContactData.socialLinks || [])
-        };
-        try {
-          localStorage.setItem('subeg_contact_data', JSON.stringify(data));
-        } catch {}
-        return data;
-      }
+    const serverContact = await fetchFromServer<ContactData>('contact', initialContactData);
+    if (serverContact) {
+      try {
+        localStorage.setItem('subeg_contact_data', JSON.stringify(serverContact));
+      } catch {}
+      return serverContact;
     }
   } catch {}
 
-  try {
-    const local = localStorage.getItem('subeg_contact_data');
-    if (local) {
-      const parsed = JSON.parse(local);
-      return {
-        ...initialContactData,
-        ...parsed,
-        additionalLinks: Array.isArray(parsed.additionalLinks) ? parsed.additionalLinks : initialContactData.additionalLinks,
-        socialLinks: Array.isArray(parsed.socialLinks) ? parsed.socialLinks : (initialContactData.socialLinks || [])
-      };
-    }
-  } catch {}
-
-  return initialContactData;
+  const local = localStorage.getItem('subeg_contact_data');
+  return local ? JSON.parse(local) : initialContactData;
 }
 
 // Subscribe to Settings real-time
 export function subscribeSiteSettings(callback: (settings: SiteSettings) => void): () => void {
-  const loadFallback = () => {
-    try {
-      const local = localStorage.getItem('subeg_site_settings');
-      if (local) {
-        const parsed = JSON.parse(local);
-        callback({
-          ...initialSiteSettings,
-          ...parsed
-        });
-        return;
-      }
-    } catch {}
-    callback(initialSiteSettings);
-  };
-
-  if (!db) {
-    loadFallback();
-    return () => {};
-  }
-
   try {
-    const docRef = doc(db, 'settings', 'main');
-    return onSnapshot(
-      docRef,
-      async docSnap => {
-        if (!docSnap.exists()) {
-          try {
-            const local = localStorage.getItem('subeg_site_settings');
-            if (local) {
-              const parsed = JSON.parse(local);
-              const data: SiteSettings = {
-                ...initialSiteSettings,
-                ...parsed
-              };
-              callback(data);
-              setDoc(docRef, data, { merge: true }).catch(() => {});
-              return;
-            }
-          } catch {}
-          callback(initialSiteSettings);
-          setDoc(docRef, initialSiteSettings, { merge: true }).catch(() => {});
-          return;
-        }
+    const local = localStorage.getItem('subeg_site_settings');
+    if (local) callback(JSON.parse(local));
+  } catch {}
 
-        const raw = docSnap.data() as SiteSettings;
-        const data: SiteSettings = {
-          ...initialSiteSettings,
-          ...raw
-        };
-        try {
-          localStorage.setItem('subeg_site_settings', JSON.stringify(data));
-        } catch {}
-        callback(data);
-      },
-      error => {
-        console.warn('Firestore subscribe settings notice:', error);
-        loadFallback();
-      }
-    );
-  } catch {
-    loadFallback();
-    return () => {};
+  fetchSiteSettings().then(callback);
+
+  if (db && isFirestoreAvailable) {
+    try {
+      const docRef = doc(db, 'settings', 'main');
+      return onSnapshot(
+        docRef,
+        async docSnap => {
+          if (docSnap.exists()) {
+            const data = docSnap.data() as SiteSettings;
+            try {
+              localStorage.setItem('subeg_site_settings', JSON.stringify(data));
+            } catch {}
+            callback(data);
+          }
+        },
+        async err => {
+          if (err?.code === 'resource-exhausted') isFirestoreAvailable = false;
+          const serverSettings = await fetchFromServer<SiteSettings>('settings', initialSiteSettings);
+          callback(serverSettings);
+        }
+      );
+    } catch {}
   }
+
+  return () => {};
 }
 
 export async function fetchSiteSettings(): Promise<SiteSettings> {
-  if (db) {
+  if (db && isFirestoreAvailable) {
     try {
       const docRef = doc(db, 'settings', 'main');
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        const raw = docSnap.data() as SiteSettings;
-        const data: SiteSettings = {
-          ...initialSiteSettings,
-          ...raw
-        };
+        const data = docSnap.data() as SiteSettings;
         try {
           localStorage.setItem('subeg_site_settings', JSON.stringify(data));
         } catch {}
         return data;
       }
-    } catch (err) {
-      console.warn('Firestore fetch settings notice:', err);
+    } catch (err: any) {
+      if (err?.code === 'resource-exhausted') isFirestoreAvailable = false;
     }
   }
 
   try {
-    const res = await fetch('/api/settings');
-    if (res.ok) {
-      const serverData = await res.json();
-      if (serverData && typeof serverData === 'object') {
-        const data: SiteSettings = {
-          ...initialSiteSettings,
-          ...serverData
-        };
-        try {
-          localStorage.setItem('subeg_site_settings', JSON.stringify(data));
-        } catch {}
-        return data;
-      }
+    const serverSettings = await fetchFromServer<SiteSettings>('settings', initialSiteSettings);
+    if (serverSettings) {
+      try {
+        localStorage.setItem('subeg_site_settings', JSON.stringify(serverSettings));
+      } catch {}
+      return serverSettings;
     }
   } catch {}
 
-  try {
-    const local = localStorage.getItem('subeg_site_settings');
-    if (local) {
-      const parsed = JSON.parse(local);
-      return {
-        ...initialSiteSettings,
-        ...parsed
-      };
-    }
-  } catch {}
-
-  return initialSiteSettings;
+  const local = localStorage.getItem('subeg_site_settings');
+  return local ? JSON.parse(local) : initialSiteSettings;
 }
 
 // Admin Auth
 export async function checkAdminAuth(): Promise<boolean> {
   const token = getAdminToken();
-  return Boolean(token && token.length > 0);
+  if (token && token.length > 0) return true;
+  try {
+    const res = await fetch('/api/admin/me', { headers: getAuthHeaders() });
+    if (res.ok) {
+      const data = await res.json();
+      return Boolean(data.authenticated);
+    }
+  } catch {}
+  return false;
 }
 
 export async function adminLogin(password: string): Promise<{ success: boolean; token?: string; error?: string }> {
   if (password === 'subeg2026') {
     const token = DEFAULT_ADMIN_TOKEN;
     setAdminToken(token);
+
+    // Also notify server backend
     try {
       await fetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ password })
       });
     } catch {}
+
     return { success: true, token };
   } else {
     return { success: false, error: 'Invalid password' };
@@ -681,9 +597,12 @@ export async function adminLogin(password: string): Promise<{ success: boolean; 
 
 export async function adminLogout(): Promise<void> {
   setAdminToken('');
+  try {
+    await fetch('/api/admin/logout', { method: 'POST' });
+  } catch {}
 }
 
-// Save or Update Project directly in Firestore
+// Save or Update Project with Multi-Tier Storage (Server API + Firestore + LocalStorage)
 export async function saveProjectApi(project: Partial<Project>): Promise<Project> {
   const id = project.id || `proj_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   const fullProject: Project = {
@@ -711,7 +630,7 @@ export async function saveProjectApi(project: Partial<Project>): Promise<Project
     updatedAt: new Date().toISOString()
   };
 
-  // 1. Immediately update Local Storage cache as fast synchronous primary store
+  // 1. Immediately update Local Storage cache
   try {
     const existingList: Project[] = JSON.parse(localStorage.getItem('subeg_projects_data') || '[]');
     const idx = existingList.findIndex(p => p.id === id);
@@ -721,423 +640,419 @@ export async function saveProjectApi(project: Partial<Project>): Promise<Project
       existingList.unshift(fullProject);
     }
     localStorage.setItem('subeg_projects_data', JSON.stringify(existingList));
-  } catch {
-    // If quota is tight, clear transient media cache and retry
-    try {
-      localStorage.removeItem('subeg_media_items');
-      const existingList: Project[] = JSON.parse(localStorage.getItem('subeg_projects_data') || '[]');
-      const idx = existingList.findIndex(p => p.id === id);
-      if (idx !== -1) existingList[idx] = fullProject;
-      else existingList.unshift(fullProject);
-      localStorage.setItem('subeg_projects_data', JSON.stringify(existingList));
-    } catch (e) {
-      console.warn('LocalStorage project cache notice:', e);
-    }
-  }
+  } catch {}
 
-  // 2. Persist directly to Firestore with a 6-second timeout race to prevent indefinite hang
-  try {
-    if (db) {
-      const docRef = doc(db, 'projects', id);
-      const savePromise = setDoc(docRef, fullProject, { merge: true });
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Firestore project save timed out')), 6000)
-      );
-      await Promise.race([savePromise, timeoutPromise]);
-    }
-  } catch (err: any) {
-    console.warn('Firestore setDoc notice (changes preserved in local & server cache):', err);
-  }
-
-  // 3. Also notify server backend if express endpoint is accessible
+  // 2. Persist to Express Server Backend (saves to data/store.json on disk)
   try {
     const isEdit = Boolean(project.id);
     const url = isEdit ? `/api/projects/${id}` : '/api/projects';
     const method = isEdit ? 'PUT' : 'POST';
-    fetch(url, {
+    await fetch(url, {
       method,
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify(fullProject)
-    }).catch(() => {});
-  } catch {}
+    });
+  } catch (e) {
+    console.warn('Server API save project notice:', e);
+  }
+
+  // 3. Persist to Firestore if available
+  if (db && isFirestoreAvailable) {
+    try {
+      const docRef = doc(db, 'projects', id);
+      const savePromise = setDoc(docRef, fullProject, { merge: true });
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Firestore operation timed out')), 4000)
+      );
+      await Promise.race([savePromise, timeoutPromise]);
+    } catch (err: any) {
+      if (err?.code === 'resource-exhausted') isFirestoreAvailable = false;
+      console.warn('Firestore setDoc notice (saved safely on server & local storage):', err);
+    }
+  }
 
   return fullProject;
 }
 
 export async function deleteProjectApi(id: string): Promise<void> {
-  // 1. Delete from Firestore with timeout
+  // 1. Delete from Server
   try {
-    if (db) {
-      const deletePromise = deleteDoc(doc(db, 'projects', id));
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Firestore delete timed out')), 5000)
-      );
-      await Promise.race([deletePromise, timeoutPromise]);
-    }
-  } catch (err) {
-    console.warn('Firestore project delete notice:', err);
-  }
+    await fetch(`/api/projects/${id}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: getAuthHeaders()
+    });
+  } catch {}
 
-  // 2. Remove from LocalStorage
+  // 2. Delete from LocalStorage
   try {
     const existingList: Project[] = JSON.parse(localStorage.getItem('subeg_projects_data') || '[]');
     const filtered = existingList.filter(p => p.id !== id);
     localStorage.setItem('subeg_projects_data', JSON.stringify(filtered));
   } catch {}
 
-  // 3. Notify server
-  try {
-    await fetch(`/api/projects/${id}`, {
-      method: 'DELETE',
-      credentials: 'include',
-      headers: getAuthHeaders()
-    }).catch(() => {});
-  } catch {}
+  // 3. Delete from Firestore
+  if (db && isFirestoreAvailable) {
+    try {
+      await deleteDoc(doc(db, 'projects', id));
+    } catch (err: any) {
+      if (err?.code === 'resource-exhausted') isFirestoreAvailable = false;
+    }
+  }
 }
 
 export async function reorderProjectsApi(projectIds: string[]): Promise<void> {
-  // 1. Update local storage immediately
+  // Server reorder
   try {
-    const existingList: Project[] = JSON.parse(localStorage.getItem('subeg_projects_data') || '[]');
-    const map = new Map(existingList.map(p => [p.id, p]));
-    const reordered: Project[] = [];
-    projectIds.forEach((id, index) => {
-      const p = map.get(id);
-      if (p) {
-        p.sortOrder = index + 1;
-        reordered.push(p);
-      }
-    });
-    // Add any remaining
-    existingList.forEach(p => {
-      if (!projectIds.includes(p.id)) reordered.push(p);
-    });
-    localStorage.setItem('subeg_projects_data', JSON.stringify(reordered));
-  } catch {}
-
-  // 2. Update in Firestore batch with timeout
-  try {
-    if (db) {
-      const batch = writeBatch(db);
-      projectIds.forEach((id, index) => {
-        const docRef = doc(db, 'projects', id);
-        batch.set(docRef, { sortOrder: index + 1, order: index + 1 }, { merge: true });
-      });
-      const batchPromise = batch.commit();
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Firestore batch reorder timeout')), 6000)
-      );
-      await Promise.race([batchPromise, timeoutPromise]);
-    }
-  } catch (err) {
-    console.warn('Firestore reorder batch notice:', err);
-  }
-
-  // 3. Update server
-  try {
-    fetch('/api/projects/reorder', {
+    await fetch('/api/projects/reorder', {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify({ projectIds })
-    }).catch(() => {});
+    });
   } catch {}
+
+  // Firestore reorder
+  if (db && isFirestoreAvailable) {
+    try {
+      const batch = writeBatch(db);
+      projectIds.forEach((id, index) => {
+        const docRef = doc(db, 'projects', id);
+        batch.update(docRef, { order: index });
+      });
+      await batch.commit();
+    } catch (err: any) {
+      if (err?.code === 'resource-exhausted') isFirestoreAvailable = false;
+    }
+  }
 }
 
 export async function saveAboutApi(data: Partial<AboutData>): Promise<AboutData> {
-  let current: AboutData = initialAboutData;
-  try {
-    const local = localStorage.getItem('subeg_about_data');
-    if (local) {
-      const parsed = JSON.parse(local);
-      current = { ...initialAboutData, ...parsed };
-    }
-  } catch {}
+  const current = await fetchAboutData();
+  const updated: AboutData = { ...current, ...data };
 
-  const updated: AboutData = {
-    ...current,
-    ...data,
-    capabilities: data.capabilities !== undefined
-      ? (Array.isArray(data.capabilities) ? data.capabilities : [])
-      : current.capabilities
-  };
-
-  // 1. Synchronously save to localStorage
+  // 1. Update LocalStorage
   try {
     localStorage.setItem('subeg_about_data', JSON.stringify(updated));
-  } catch (e) {
-    console.warn('LocalStorage save about notice:', e);
-  }
+  } catch {}
 
-  // 2. Persist to Firestore with timeout guard
+  // 2. Save to Server
   try {
-    if (db) {
-      const docRef = doc(db, 'about', 'main');
-      const savePromise = setDoc(docRef, updated, { merge: true });
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Firestore about timeout')), 5000)
-      );
-      await Promise.race([savePromise, timeoutPromise]);
-    }
-  } catch (err) {
-    console.warn('Firestore about setDoc notice:', err);
-  }
-
-  // 3. Send to server
-  try {
-    fetch('/api/about', {
+    await fetch('/api/about', {
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify(updated)
-    }).catch(() => {});
+    });
   } catch {}
+
+  // 3. Save to Firestore
+  if (db && isFirestoreAvailable) {
+    try {
+      await setDoc(doc(db, 'about', 'main'), updated, { merge: true });
+    } catch (err: any) {
+      if (err?.code === 'resource-exhausted') isFirestoreAvailable = false;
+    }
+  }
 
   return updated;
 }
 
 export async function saveContactApi(data: Partial<ContactData>): Promise<ContactData> {
-  let current: ContactData = initialContactData;
-  try {
-    const local = localStorage.getItem('subeg_contact_data');
-    if (local) {
-      const parsed = JSON.parse(local);
-      current = { ...initialContactData, ...parsed };
-    }
-  } catch {}
-
-  const updated: ContactData = {
-    ...current,
-    ...data,
-    additionalLinks: data.additionalLinks !== undefined
-      ? (Array.isArray(data.additionalLinks) ? data.additionalLinks : [])
-      : (Array.isArray(current.additionalLinks) ? current.additionalLinks : []),
-    socialLinks: data.socialLinks !== undefined
-      ? (Array.isArray(data.socialLinks) ? data.socialLinks : [])
-      : (Array.isArray(current.socialLinks) ? current.socialLinks : [])
-  };
+  const current = await fetchContactData();
+  const updated: ContactData = { ...current, ...data };
 
   try {
     localStorage.setItem('subeg_contact_data', JSON.stringify(updated));
-  } catch (e) {
-    console.warn('LocalStorage save contact notice:', e);
-  }
+  } catch {}
 
   try {
-    if (db) {
-      const docRef = doc(db, 'contact', 'main');
-      const savePromise = setDoc(docRef, updated, { merge: true });
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Firestore contact timeout')), 5000)
-      );
-      await Promise.race([savePromise, timeoutPromise]);
-    }
-  } catch (err) {
-    console.warn('Firestore contact setDoc notice:', err);
-  }
-
-  try {
-    fetch('/api/contact', {
+    await fetch('/api/contact', {
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify(updated)
-    }).catch(() => {});
+    });
   } catch {}
+
+  if (db && isFirestoreAvailable) {
+    try {
+      await setDoc(doc(db, 'contact', 'main'), updated, { merge: true });
+    } catch (err: any) {
+      if (err?.code === 'resource-exhausted') isFirestoreAvailable = false;
+    }
+  }
 
   return updated;
 }
 
 export async function saveSettingsApi(data: Partial<SiteSettings>): Promise<SiteSettings> {
-  let current: SiteSettings = initialSiteSettings;
-  try {
-    const local = localStorage.getItem('subeg_site_settings');
-    if (local) {
-      const parsed = JSON.parse(local);
-      current = { ...initialSiteSettings, ...parsed };
-    }
-  } catch {}
-
+  const current = await fetchSiteSettings();
   const updated: SiteSettings = { ...current, ...data };
 
   try {
     localStorage.setItem('subeg_site_settings', JSON.stringify(updated));
-  } catch (e) {
-    console.warn('LocalStorage save settings notice:', e);
-  }
+  } catch {}
 
   try {
-    if (db) {
-      const docRef = doc(db, 'settings', 'main');
-      const savePromise = setDoc(docRef, updated, { merge: true });
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Firestore settings timeout')), 5000)
-      );
-      await Promise.race([savePromise, timeoutPromise]);
-    }
-  } catch (err) {
-    console.warn('Firestore settings setDoc notice:', err);
-  }
-
-  try {
-    fetch('/api/settings', {
+    await fetch('/api/settings', {
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify(updated)
-    }).catch(() => {});
+    });
   } catch {}
+
+  if (db && isFirestoreAvailable) {
+    try {
+      await setDoc(doc(db, 'settings', 'main'), updated, { merge: true });
+    } catch (err: any) {
+      if (err?.code === 'resource-exhausted') isFirestoreAvailable = false;
+    }
+  }
 
   return updated;
 }
 
-// Complete Flush of Deleted / Demo Data & Ghost Items
-export async function flushAllMockDataApi(): Promise<void> {
-  const mockIds = ['proj-1', 'proj-2', 'proj-3', 'proj-4', 'proj-5', 'proj-6'];
-
-  // 1. Delete mock IDs from Firestore
-  try {
-    if (db) {
-      for (const id of mockIds) {
-        try {
-          await deleteDoc(doc(db, 'projects', id));
-        } catch {}
-      }
-    }
-  } catch {}
-
-  // 2. Clear out deleted / mock items from local storage
-  try {
-    const cached = localStorage.getItem('subeg_projects_data');
-    if (cached) {
-      const list: Project[] = JSON.parse(cached);
-      const filtered = list.filter(p => !mockIds.includes(p.id));
-      localStorage.setItem('subeg_projects_data', JSON.stringify(filtered));
-    }
-  } catch {}
-
-  // 3. Clear temporary media cache
-  try {
-    localStorage.removeItem('subeg_media_items');
-  } catch {}
-
-  // 4. Notify server to remove mock projects from server store
-  try {
-    for (const id of mockIds) {
-      fetch(`/api/projects/${id}`, {
-        method: 'DELETE',
-        credentials: 'include',
-        headers: getAuthHeaders()
-      }).catch(() => {});
-    }
-  } catch {}
-}
-
 export async function fetchMediaApi(): Promise<MediaItem[]> {
+  // 1. Try Server API first (direct uploads directory)
   try {
-    const querySnapshot = await getDocs(collection(db, 'media'));
-    const mediaItems: MediaItem[] = querySnapshot.docs.map(
-      d => ({ id: d.id, ...d.data() } as MediaItem)
-    );
-    mediaItems.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
-    return mediaItems;
-  } catch {
-    const local = localStorage.getItem('subeg_media_items');
-    return local ? JSON.parse(local) : [];
+    const serverMedia = await fetchFromServer<MediaItem[]>('media', []);
+    if (serverMedia && serverMedia.length > 0) {
+      try {
+        localStorage.setItem('subeg_media_items', JSON.stringify(serverMedia));
+      } catch {}
+      return serverMedia;
+    }
+  } catch {}
+
+  // 2. Try Firestore if available
+  if (db && isFirestoreAvailable) {
+    try {
+      const querySnapshot = await getDocs(collection(db, 'media'));
+      if (!querySnapshot.empty) {
+        const mediaItems: MediaItem[] = querySnapshot.docs.map(
+          d => ({ id: d.id, ...d.data() } as MediaItem)
+        );
+        mediaItems.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+        try {
+          localStorage.setItem('subeg_media_items', JSON.stringify(mediaItems));
+        } catch {}
+        return mediaItems;
+      }
+    } catch (err: any) {
+      if (err?.code === 'resource-exhausted') isFirestoreAvailable = false;
+    }
   }
+
+  // 3. Fallback to LocalStorage
+  const local = localStorage.getItem('subeg_media_items');
+  return local ? JSON.parse(local) : [];
 }
 
 export async function uploadMediaApi(file: File): Promise<MediaItem> {
-  // Portable optimized Data URL for universal cross-platform persistence (works on GitHub Pages, Firebase, Cloud Run, and mobile)
   const dataUrl = await fileToDataUrl(file);
   const mediaId = `media_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  
+  let finalUrl = dataUrl;
+
+  // 1. Upload to Server disk storage
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch('/api/media/upload', {
+      method: 'POST',
+      credentials: 'include',
+      headers: getAuthHeaders(),
+      body: formData
+    });
+    if (res.ok) {
+      const serverItem = await res.json();
+      if (serverItem?.url) {
+        finalUrl = serverItem.url;
+      }
+    }
+  } catch (e) {
+    console.warn('Server upload notice, using optimized client media payload:', e);
+  }
+
   const mediaItem: MediaItem = {
     id: mediaId,
     filename: file.name,
     originalName: file.name,
-    url: dataUrl,
+    url: finalUrl,
     mimeType: file.type || (file.name.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg'),
     uploadedAt: new Date().toISOString(),
     size: file.size
   };
 
-  try {
-    const savePromise = setDoc(doc(db, 'media', mediaId), mediaItem);
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Media Firestore timeout')), 5000)
-    );
-    await Promise.race([savePromise, timeoutPromise]);
-  } catch (err) {
-    console.warn('Notice saving media item to Firestore (using local & server copy):', err);
-  }
-
+  // 2. LocalStorage cache
   try {
     const existing: MediaItem[] = JSON.parse(localStorage.getItem('subeg_media_items') || '[]');
     existing.unshift(mediaItem);
-    // Keep max 50 items in local media cache to preserve localStorage quota
-    if (existing.length > 50) existing.length = 50;
+    if (existing.length > 60) existing.length = 60;
     localStorage.setItem('subeg_media_items', JSON.stringify(existing));
   } catch {}
 
-  // Also sync to server if running
-  try {
-    const formData = new FormData();
-    formData.append('file', file);
-    fetch('/api/media/upload', {
-      method: 'POST',
-      credentials: 'include',
-      headers: getAuthHeaders(),
-      body: formData
-    }).catch(() => {});
-  } catch {}
+  // 3. Firestore save if available
+  if (db && isFirestoreAvailable) {
+    try {
+      const savePromise = setDoc(doc(db, 'media', mediaId), mediaItem);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Media Firestore timeout')), 4000)
+      );
+      await Promise.race([savePromise, timeoutPromise]);
+    } catch (err: any) {
+      if (err?.code === 'resource-exhausted') isFirestoreAvailable = false;
+    }
+  }
 
   return mediaItem;
 }
 
 export async function deleteMediaApi(filenameOrId: string): Promise<void> {
+  // Delete from Server
   try {
-    await deleteDoc(doc(db, 'media', filenameOrId));
+    await fetch(`/api/media/${filenameOrId}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: getAuthHeaders()
+    });
   } catch {}
 
+  // Delete from LocalStorage
   try {
     const existing: MediaItem[] = JSON.parse(localStorage.getItem('subeg_media_items') || '[]');
     const filtered = existing.filter(m => m.id !== filenameOrId && m.filename !== filenameOrId);
     localStorage.setItem('subeg_media_items', JSON.stringify(filtered));
   } catch {}
 
-  try {
-    await fetch(`/api/media/${filenameOrId}`, {
-      method: 'DELETE',
-      credentials: 'include',
-      headers: getAuthHeaders()
-    }).catch(() => {});
-  } catch {}
+  // Delete from Firestore
+  if (db && isFirestoreAvailable) {
+    try {
+      await deleteDoc(doc(db, 'media', filenameOrId));
+    } catch (err: any) {
+      if (err?.code === 'resource-exhausted') isFirestoreAvailable = false;
+    }
+  }
 }
 
 export async function uploadCvApi(file: File): Promise<{ cvUrl: string }> {
   try {
-    const dataUrl = await fileToDataUrl(file);
-    await saveAboutApi({ cvUrl: dataUrl });
-    return { cvUrl: dataUrl };
+    let cvUrl = '';
+    try {
+      const formData = new FormData();
+      formData.append('cvFile', file);
+      const res = await fetch('/api/cv/upload', {
+        method: 'POST',
+        credentials: 'include',
+        headers: getAuthHeaders(),
+        body: formData
+      });
+      if (res.ok) {
+        const data = await res.json();
+        cvUrl = data.cvUrl;
+      }
+    } catch {}
+
+    if (!cvUrl) {
+      cvUrl = await fileToDataUrl(file);
+    }
+
+    await saveAboutApi({ cvUrl });
+    return { cvUrl };
   } catch {
     throw new Error('Failed to upload CV file');
   }
 }
 
-export async function resetDemoDataApi(): Promise<void> {
+export async function exportFullBackup(): Promise<string> {
+  const [projects, about, contact, settings, media] = await Promise.all([
+    fetchProjects(),
+    fetchAboutData(),
+    fetchContactData(),
+    fetchSiteSettings(),
+    fetchMediaApi()
+  ]);
+
+  const backupData = {
+    version: '2.0',
+    exportedAt: new Date().toISOString(),
+    store: {
+      about,
+      contact,
+      settings,
+      projects,
+      media
+    }
+  };
+
+  return JSON.stringify(backupData, null, 2);
+}
+
+export async function importFullBackup(jsonContent: string): Promise<boolean> {
   try {
-    const batch = writeBatch(db);
-    initialProjects.forEach((proj, idx) => {
-      const docRef = doc(db, 'projects', proj.id);
-      batch.set(docRef, { ...proj, order: idx });
-    });
-    batch.set(doc(db, 'about', 'main'), initialAboutData);
-    batch.set(doc(db, 'contact', 'main'), initialContactData);
-    batch.set(doc(db, 'settings', 'main'), initialSiteSettings);
-    await batch.commit();
+    const parsed = JSON.parse(jsonContent);
+    const store = parsed.store || parsed;
+
+    if (store.projects && Array.isArray(store.projects)) {
+      for (const p of store.projects) {
+        await saveProjectApi(p);
+      }
+    }
+    if (store.about) {
+      await saveAboutApi(store.about);
+    }
+    if (store.contact) {
+      await saveContactApi(store.contact);
+    }
+    if (store.settings) {
+      await saveSettingsApi(store.settings);
+    }
+
+    // Also push to server backup endpoint
+    try {
+      await fetch('/api/backup/restore', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify(store)
+      });
+    } catch {}
+
+    return true;
   } catch (err) {
-    console.error('Error resetting demo data in Firestore:', err);
+    console.error('Failed to import backup:', err);
+    return false;
+  }
+}
+
+export async function resetDemoDataApi(): Promise<void> {
+  // Server reset
+  try {
+    await fetch('/api/settings/reset-demo', {
+      method: 'POST',
+      credentials: 'include',
+      headers: getAuthHeaders()
+    });
+  } catch {}
+
+  // Firestore reset
+  if (db && isFirestoreAvailable) {
+    try {
+      const batch = writeBatch(db);
+      initialProjects.forEach((proj, idx) => {
+        const docRef = doc(db, 'projects', proj.id);
+        batch.set(docRef, { ...proj, order: idx });
+      });
+      batch.set(doc(db, 'about', 'main'), initialAboutData);
+      batch.set(doc(db, 'contact', 'main'), initialContactData);
+      batch.set(doc(db, 'settings', 'main'), initialSiteSettings);
+      await batch.commit();
+    } catch (err: any) {
+      if (err?.code === 'resource-exhausted') isFirestoreAvailable = false;
+    }
   }
 
   localStorage.removeItem('subeg_projects_data');
@@ -1146,3 +1061,4 @@ export async function resetDemoDataApi(): Promise<void> {
   localStorage.removeItem('subeg_site_settings');
   localStorage.removeItem('subeg_media_items');
 }
+

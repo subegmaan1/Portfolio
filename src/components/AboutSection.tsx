@@ -34,39 +34,24 @@ const itemVariants = {
 };
 
 export const AboutSection: React.FC<AboutSectionProps> = ({ about, projects = [], onNavigateToSection }) => {
-  const safeAbout: AboutData = {
-    ...about,
-    name: about?.name || 'SUBEG SINGH',
-    title: about?.title || 'Projection Designer & Immersive Media Designer',
-    primaryPractice: about?.primaryPractice || 'Digital Scenography / Projection Design',
-    secondaryPractice: about?.secondaryPractice || 'Immersive Media',
-    introduction: about?.introduction || '',
-    background: about?.background || '',
-    practiceDescription: about?.practiceDescription || '',
-    capabilities: Array.isArray(about?.capabilities) ? about.capabilities : [],
-    cvUrl: about?.cvUrl || '',
-    photoUrl: about?.photoUrl || ''
-  };
-
-  const safeProjects = Array.isArray(projects) ? projects : [];
-  const projectionProjects = safeProjects.filter(p => p && p.category === 'PROJECTION DESIGN' && p.published);
-  const immersiveProjects = safeProjects.filter(p => p && p.category === 'IMMERSIVE MEDIA' && p.published);
+  const projectionProjects = projects.filter(p => p.category === 'PROJECTION DESIGN' && p.published);
+  const immersiveProjects = projects.filter(p => p.category === 'IMMERSIVE MEDIA' && p.published);
 
   const projCover1 =
     projectionProjects[0]?.heroMedia ||
     projectionProjects[0]?.hoverMedia ||
-    'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&w=1800&q=80';
+    'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?auto=format&fit=crop&q=80&w=1200';
 
   const projCover2 =
     immersiveProjects[0]?.heroMedia ||
     immersiveProjects[0]?.hoverMedia ||
-    'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=1200&q=80';
+    'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=1200';
   const [portraitTouched, setPortraitTouched] = React.useState(false);
   const [card1Touched, setCard1Touched] = React.useState(false);
   const [card2Touched, setCard2Touched] = React.useState(false);
 
-  const isStockPhoto = !safeAbout.photoUrl || safeAbout.photoUrl.includes('photo-1507003211169');
-  const validPhotoUrl = isStockPhoto ? '' : safeAbout.photoUrl;
+  const isStockPhoto = !about.photoUrl || about.photoUrl.includes('photo-1507003211169');
+  const validPhotoUrl = isStockPhoto ? '' : about.photoUrl;
 
   return (
     <motion.section
@@ -86,16 +71,16 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ about, projects = []
           {/* Left Column: Name & Intro */}
           <div className="lg:col-span-7 space-y-6 sm:space-y-8">
             <motion.h1 variants={itemVariants} className="font-syne font-extrabold text-4xl sm:text-7xl lg:text-8xl xl:text-[95px] tracking-[-0.04em] text-neutral-100 leading-[0.9] uppercase">
-              {safeAbout.name ? safeAbout.name.split(' ').map((word, i) => (
+              {about.name ? about.name.split(' ').map((word, i) => (
                 <React.Fragment key={i}>
                   {word}
-                  {i < safeAbout.name.split(' ').length - 1 && <br />}
+                  {i < about.name.split(' ').length - 1 && <br />}
                 </React.Fragment>
               )) : 'SUBEG\nSINGH'}
             </motion.h1>
 
             <motion.div variants={itemVariants} className="sub-text text-neutral-200 max-w-xl text-base sm:text-lg leading-relaxed font-light">
-              {safeAbout.introduction || `${safeAbout.title} working at the intersection of architecture, performance, and digital scenography.`}
+              {about.introduction || `${about.title} working at the intersection of architecture, performance, and digital scenography.`}
             </motion.div>
 
             <motion.div variants={itemVariants} className="space-y-6 max-w-lg">
@@ -104,9 +89,9 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ about, projects = []
               </p>
 
               {/* CV / Contact Button */}
-              {safeAbout.cvUrl ? (
+              {about.cvUrl ? (
                 <a
-                  href={safeAbout.cvUrl}
+                  href={about.cvUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="cv-button inline-flex items-center space-x-2"
@@ -154,7 +139,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ about, projects = []
                   {validPhotoUrl ? (
                     <img
                       src={validPhotoUrl}
-                      alt={safeAbout.name || 'Subeg Singh'}
+                      alt={about.name || 'Subeg Singh'}
                       className={`w-full h-full object-cover object-top contrast-125 transition-all duration-500 active:grayscale-0 group-active:grayscale-0 ${
                         portraitTouched ? 'grayscale-0 scale-105' : 'grayscale group-hover:grayscale-0 group-hover:scale-105'
                       }`}
@@ -166,7 +151,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ about, projects = []
                         SS
                       </div>
                       <span className="font-mono text-xs text-neutral-400 uppercase tracking-widest">
-                        {safeAbout.name || 'SUBEG SINGH'}
+                        {about.name || 'SUBEG SINGH'}
                       </span>
                     </div>
                   )}
@@ -191,7 +176,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ about, projects = []
             01 &bull; Background
           </div>
           <p className="text-white/80 leading-relaxed text-sm sm:text-base font-light">
-            {safeAbout.background}
+            {about.background}
           </p>
         </div>
 
@@ -201,7 +186,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ about, projects = []
             02 &bull; Digital Scenography & Practice
           </div>
           <p className="text-white/80 leading-relaxed text-sm sm:text-base font-light">
-            {safeAbout.practiceDescription}
+            {about.practiceDescription}
           </p>
         </div>
       </motion.div>
@@ -342,12 +327,12 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ about, projects = []
             03 &bull; Supporting Capabilities
           </div>
           <div className="font-syne text-xs sm:text-sm text-neutral-300">
-            {safeAbout.primaryPractice} &bull; {safeAbout.secondaryPractice}
+            {about.primaryPractice} &bull; {about.secondaryPractice}
           </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {(safeAbout.capabilities || []).map((cap, idx) => (
+          {about.capabilities.map((cap, idx) => (
             <div
               key={idx}
               className="p-4 bg-white/[0.02] border border-white/[0.06] hover:border-teal-500/40 transition-colors group rounded-none"
@@ -368,11 +353,11 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ about, projects = []
         <div className="flex gap-8">
           <div className="flex flex-col gap-1">
             <span className="font-mono text-[9px] text-white/40 uppercase tracking-[0.2em]">Primary</span>
-            <span className="text-xs text-neutral-300">{safeAbout.primaryPractice}</span>
+            <span className="text-xs text-neutral-300">{about.primaryPractice}</span>
           </div>
           <div className="flex flex-col gap-1">
             <span className="font-mono text-[9px] text-white/40 uppercase tracking-[0.2em]">Secondary</span>
-            <span className="text-xs text-neutral-300">{safeAbout.secondaryPractice}</span>
+            <span className="text-xs text-neutral-300">{about.secondaryPractice}</span>
           </div>
         </div>
         <div className="font-mono text-[9px] text-white/30 tracking-[0.1em] uppercase">

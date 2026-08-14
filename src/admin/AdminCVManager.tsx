@@ -5,7 +5,7 @@ import { FileText, Upload, Trash2, ExternalLink, FileCheck } from 'lucide-react'
 
 interface AdminCVManagerProps {
   about: AboutData;
-  onRefreshAbout: (newAbout?: AboutData) => void;
+  onRefreshAbout: () => void;
 }
 
 export const AdminCVManager: React.FC<AdminCVManagerProps> = ({ about, onRefreshAbout }) => {
@@ -26,9 +26,8 @@ export const AdminCVManager: React.FC<AdminCVManagerProps> = ({ about, onRefresh
 
     try {
       const res = await uploadCvApi(file);
-      const updated = await saveAboutApi({ cvUrl: res.cvUrl });
       setMessage('CV uploaded successfully! Automatically attached to public About page.');
-      onRefreshAbout(updated);
+      onRefreshAbout();
     } catch {
       setMessage('Failed to upload CV PDF.');
     } finally {
@@ -39,9 +38,9 @@ export const AdminCVManager: React.FC<AdminCVManagerProps> = ({ about, onRefresh
   const handleDeleteCv = async () => {
     if (confirm('Remove current CV link from public About page?')) {
       try {
-        const updated = await saveAboutApi({ cvUrl: '' });
+        await saveAboutApi({ cvUrl: '' });
         setMessage('CV link removed.');
-        onRefreshAbout(updated);
+        onRefreshAbout();
       } catch {
         setMessage('Failed to remove CV link.');
       }

@@ -23,29 +23,12 @@ export const initialAboutData: AboutData = {
 };
 
 export const initialContactData: ContactData = {
-  tagline: "04 • Inquiries",
-  title: "CONTACT",
-  statement: "Available for international commissions, digital scenography direction, and spatial media collaborations.",
-  email: "projectiondjjs@gmail.com",
-  emailLabel: "Direct Contact Email",
-  phone: "",
-  phoneLabel: "Phone / WhatsApp",
+  email: "subeg.singh@digitalscenography.com",
   location: "New York / Global",
-  locationLabel: "Base / Location",
-  availabilityStatus: "Accepting commissions & creative collaborations for 2026/2027",
-  responseTime: "Typical response time: within 24–48 hours",
-  representationHeading: "Representation & Management Inquiries",
   additionalLinks: [
     { label: "Representation / Management", url: "mailto:mgmt@digitalscenography.com" },
-    { label: "Studio Inquiries", url: "mailto:projectiondjjs@gmail.com" }
-  ],
-  socialLinks: [
-    { label: "Instagram", url: "https://instagram.com/subeg.design" },
-    { label: "LinkedIn", url: "https://linkedin.com/in/subegsingh" },
-    { label: "Vimeo", url: "https://vimeo.com/subegsingh" }
-  ],
-  footerCopyright: "© 2026 SUBEG SINGH. All rights reserved.",
-  footerSubtitle: "Digital Scenography & Immersive Media"
+    { label: "Studio Inquiries", url: "mailto:subeg.singh@digitalscenography.com" }
+  ]
 };
 
 export const initialSiteSettings: SiteSettings = {

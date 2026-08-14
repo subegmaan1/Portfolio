@@ -1,51 +1,33 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { AboutData } from '../types';
 import { saveAboutApi, uploadMediaApi } from '../lib/api';
-import { Save, Plus, Trash2, Upload, Image as ImageIcon, CheckCircle } from 'lucide-react';
+import { Save, Plus, Trash2, Upload, Image as ImageIcon } from 'lucide-react';
 
 interface AdminAboutEditorProps {
   about: AboutData;
-  onRefreshAbout: (newAbout?: AboutData) => void;
+  onRefreshAbout: () => void;
 }
 
 export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRefreshAbout }) => {
-  const [name, setName] = useState(about?.name || 'SUBEG SINGH');
-  const [title, setTitle] = useState(about?.title || 'Projection Designer & Immersive Media Designer');
-  const [primaryPractice, setPrimaryPractice] = useState(about?.primaryPractice || 'Digital Scenography / Projection Design');
-  const [secondaryPractice, setSecondaryPractice] = useState(about?.secondaryPractice || 'Immersive Media');
-  const [introduction, setIntroduction] = useState(about?.introduction || '');
-  const [background, setBackground] = useState(about?.background || '');
-  const [practiceDescription, setPracticeDescription] = useState(about?.practiceDescription || '');
-  const [capabilities, setCapabilities] = useState<string[]>(Array.isArray(about?.capabilities) ? about.capabilities : []);
-  const [photoUrl, setPhotoUrl] = useState(about?.photoUrl || '');
+  const [name, setName] = useState(about.name || 'SUBEG SINGH');
+  const [title, setTitle] = useState(about.title || 'Projection Designer & Immersive Media Designer');
+  const [primaryPractice, setPrimaryPractice] = useState(about.primaryPractice || 'Digital Scenography / Projection Design');
+  const [secondaryPractice, setSecondaryPractice] = useState(about.secondaryPractice || 'Immersive Media');
+  const [introduction, setIntroduction] = useState(about.introduction || '');
+  const [background, setBackground] = useState(about.background || '');
+  const [practiceDescription, setPracticeDescription] = useState(about.practiceDescription || '');
+  const [capabilities, setCapabilities] = useState<string[]>(about.capabilities || []);
+  const [photoUrl, setPhotoUrl] = useState(about.photoUrl || '');
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
-  const [isDirty, setIsDirty] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
 
-  // Sync state only when not actively editing dirty fields
-  useEffect(() => {
-    if (about && !isDirty) {
-      setName(about.name || 'SUBEG SINGH');
-      setTitle(about.title || 'Projection Designer & Immersive Media Designer');
-      setPrimaryPractice(about.primaryPractice || 'Digital Scenography / Projection Design');
-      setSecondaryPractice(about.secondaryPractice || 'Immersive Media');
-      setIntroduction(about.introduction || '');
-      setBackground(about.background || '');
-      setPracticeDescription(about.practiceDescription || '');
-      setCapabilities(Array.isArray(about.capabilities) ? about.capabilities : []);
-      setPhotoUrl(about.photoUrl || '');
-    }
-  }, [about, isDirty]);
-
   const addCapability = () => {
-    setIsDirty(true);
     setCapabilities(prev => [...prev, '']);
   };
 
   const removeCapability = (index: number) => {
-    setIsDirty(true);
     setCapabilities(prev => prev.filter((_, i) => i !== index));
   };
 
@@ -55,7 +37,6 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
 
     setUploadingPhoto(true);
     setMessage('');
-    setIsDirty(true);
 
     try {
       try {
@@ -88,7 +69,7 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
     setMessage('');
 
     try {
-      const payload: Partial<AboutData> = {
+      await saveAboutApi({
         name,
         title,
         primaryPractice,
@@ -96,18 +77,14 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
         introduction,
         background,
         practiceDescription,
-        capabilities: capabilities.filter(c => c && c.trim().length > 0),
-        cvUrl: about?.cvUrl || '',
+        capabilities,
+        cvUrl: about.cvUrl,
         photoUrl
-      };
-      const saved = await saveAboutApi(payload);
-      setIsDirty(false);
-      setMessage('About section saved and published successfully!');
-      onRefreshAbout(saved);
-      setTimeout(() => setMessage(''), 4000);
-    } catch (err) {
-      console.error('Save about error:', err);
-      setMessage('Notice: changes updated in local and cloud stores.');
+      });
+      setMessage('About content updated successfully!');
+      onRefreshAbout();
+    } catch {
+      setMessage('Failed to update About content');
     } finally {
       setSaving(false);
     }
@@ -152,10 +129,7 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
               <input
                 type="text"
                 value={name}
-                onChange={e => {
-                  setName(e.target.value);
-                  setIsDirty(true);
-                }}
+                onChange={e => setName(e.target.value)}
                 className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 font-syne font-bold text-lg"
                 required
               />
@@ -166,10 +140,7 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
               <input
                 type="text"
                 value={title}
-                onChange={e => {
-                  setTitle(e.target.value);
-                  setIsDirty(true);
-                }}
+                onChange={e => setTitle(e.target.value)}
                 className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 font-syne text-sm"
                 required
               />
@@ -182,10 +153,7 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
               <input
                 type="text"
                 value={primaryPractice}
-                onChange={e => {
-                  setPrimaryPractice(e.target.value);
-                  setIsDirty(true);
-                }}
+                onChange={e => setPrimaryPractice(e.target.value)}
                 className="w-full px-4 py-2 bg-neutral-950 border border-neutral-800 text-neutral-200"
               />
             </div>
@@ -195,10 +163,7 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
               <input
                 type="text"
                 value={secondaryPractice}
-                onChange={e => {
-                  setSecondaryPractice(e.target.value);
-                  setIsDirty(true);
-                }}
+                onChange={e => setSecondaryPractice(e.target.value)}
                 className="w-full px-4 py-2 bg-neutral-950 border border-neutral-800 text-neutral-200"
               />
             </div>
@@ -239,10 +204,7 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
                   type="text"
                   value={photoUrl}
                   placeholder="e.g. https://images.unsplash.com/photo-... or /uploads/..."
-                  onChange={e => {
-                    setPhotoUrl(e.target.value);
-                    setIsDirty(true);
-                  }}
+                  onChange={e => setPhotoUrl(e.target.value)}
                   className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 text-neutral-100 font-mono text-xs focus:border-teal-500"
                 />
               </div>
@@ -263,10 +225,7 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
                 {photoUrl && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setPhotoUrl('');
-                      setIsDirty(true);
-                    }}
+                    onClick={() => setPhotoUrl('')}
                     className="text-neutral-500 hover:text-rose-400 text-xs underline font-mono"
                   >
                     Remove Photo
@@ -286,10 +245,7 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
             <label className="block text-neutral-400 uppercase mb-2">Short Hero Introduction Statement</label>
             <textarea
               value={introduction}
-              onChange={e => {
-                setIntroduction(e.target.value);
-                setIsDirty(true);
-              }}
+              onChange={e => setIntroduction(e.target.value)}
               rows={2}
               className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 text-sm"
             />
@@ -299,10 +255,7 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
             <label className="block text-neutral-400 uppercase mb-2">01 &bull; Professional History / Background</label>
             <textarea
               value={background}
-              onChange={e => {
-                setBackground(e.target.value);
-                setIsDirty(true);
-              }}
+              onChange={e => setBackground(e.target.value)}
               rows={4}
               className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 text-sm"
             />
@@ -312,10 +265,7 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
             <label className="block text-neutral-400 uppercase mb-2">02 &bull; Digital Scenography & Practice Description</label>
             <textarea
               value={practiceDescription}
-              onChange={e => {
-                setPracticeDescription(e.target.value);
-                setIsDirty(true);
-              }}
+              onChange={e => setPracticeDescription(e.target.value)}
               rows={4}
               className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 text-sm"
             />

@@ -275,14 +275,12 @@ export const ImmersiveBackground: React.FC<ImmersiveBackgroundProps> = ({ active
       window.removeEventListener('touchmove', handlePointerMove);
       window.removeEventListener('touchstart', handlePointerMove);
       window.removeEventListener('resize', handleResize);
-      try {
-        if (container && renderer && renderer.domElement && container.contains(renderer.domElement)) {
-          container.removeChild(renderer.domElement);
-        }
-        geometry.dispose();
-        material.dispose();
-        renderer.dispose();
-      } catch {}
+      if (container && renderer.domElement) {
+        container.removeChild(renderer.domElement);
+      }
+      geometry.dispose();
+      material.dispose();
+      renderer.dispose();
       materialRef.current = null;
     };
   }, []);
