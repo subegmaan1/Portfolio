@@ -548,12 +548,27 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
                   <div key={idx} className="bg-neutral-950 p-2.5 border border-neutral-800 space-y-2 group">
                     <div className="aspect-video relative overflow-hidden bg-neutral-900 border border-neutral-800/80">
                       {url ? (
-                        <img src={url} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-neutral-600 font-mono text-[10px]">
-                          Enter image URL below
-                        </div>
-                      )}
+                        <img
+                          src={url}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          onError={e => {
+                            (e.currentTarget as HTMLElement).style.display = 'none';
+                            const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                            if (fallback) fallback.style.display = 'flex';
+                          }}
+                        />
+                      ) : null}
+                      <div
+                        style={{ display: url ? 'none' : 'flex' }}
+                        className="w-full h-full flex flex-col items-center justify-center text-neutral-500 font-mono text-[10px] p-2 text-center bg-neutral-900"
+                      >
+                        {url.startsWith('/uploads/') ? (
+                          <span className="text-amber-400">Broken local path. Please re-upload photo.</span>
+                        ) : (
+                          <span>{url ? 'Failed to load image' : 'Enter image URL below'}</span>
+                        )}
+                      </div>
                       <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-neutral-950/80 font-mono text-[9px] text-neutral-400 border border-white/10">
                         #{idx + 1}
                       </span>

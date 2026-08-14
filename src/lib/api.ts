@@ -572,28 +572,9 @@ export async function fetchMediaApi(): Promise<MediaItem[]> {
 }
 
 export async function uploadMediaApi(file: File): Promise<MediaItem> {
-  // Try server upload first if express is running
-  try {
-    const formData = new FormData();
-    formData.append('file', file);
-    const res = await fetch('/api/media/upload', {
-      method: 'POST',
-      credentials: 'include',
-      headers: getAuthHeaders(),
-      body: formData
-    });
-    const ct = res.headers.get('content-type') || '';
-    if (res.ok && ct.includes('application/json')) {
-      const serverItem: MediaItem = await res.json();
-      await setDoc(doc(db, 'media', serverItem.id), serverItem, { merge: true }).catch(() => {});
-      return serverItem;
-    }
-  } catch {}
-
-  // Portable Data URL mode for static hosting (e.g. GitHub Pages):
-  // Converts image to Data URL so it is stored in Firestore and renders anywhere on mobile/web globally!
+  // Portable optimized Data URL for universal cross-platform persistence (works on GitHub Pages, Firebase, Cloud Run, and mobile)
   const dataUrl = await fileToDataUrl(file);
-  const mediaId = `media_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+  const mediaId = `media_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   const mediaItem: MediaItem = {
     id: mediaId,
     filename: file.name,
@@ -614,6 +595,18 @@ export async function uploadMediaApi(file: File): Promise<MediaItem> {
     const existing: MediaItem[] = JSON.parse(localStorage.getItem('subeg_media_items') || '[]');
     existing.unshift(mediaItem);
     localStorage.setItem('subeg_media_items', JSON.stringify(existing));
+  } catch {}
+
+  // Also sync to server if running
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    fetch('/api/media/upload', {
+      method: 'POST',
+      credentials: 'include',
+      headers: getAuthHeaders(),
+      body: formData
+    }).catch(() => {});
   } catch {}
 
   return mediaItem;
