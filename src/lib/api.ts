@@ -41,8 +41,56 @@ function getAuthHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-// Convert File to Base64 Data URL for universal cross-device image persistence
+// Convert File to optimized Data URL for universal cross-device persistence
 export async function fileToDataUrl(file: File): Promise<string> {
+  // If it's an image, optimize and resize to max 1920px to prevent Firestore 1MB document quota overflow
+  if (file.type.startsWith('image/') && typeof window !== 'undefined') {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const rawDataUrl = e.target?.result as string;
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const maxDim = 1920;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > maxDim || height > maxDim) {
+              if (width > height) {
+                height = Math.round((height * maxDim) / width);
+                width = maxDim;
+              } else {
+                width = Math.round((width * maxDim) / height);
+                height = maxDim;
+              }
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              resolve(rawDataUrl);
+              return;
+            }
+
+            ctx.drawImage(img, 0, 0, width, height);
+            const optimized = canvas.toDataURL('image/jpeg', 0.85);
+            resolve(optimized);
+          } catch {
+            resolve(rawDataUrl);
+          }
+        };
+        img.onerror = () => resolve(rawDataUrl);
+        img.src = rawDataUrl;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Non-image files (e.g. videos or PDFs)
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
@@ -349,6 +397,8 @@ export async function saveProjectApi(project: Partial<Project>): Promise<Project
     longDescription: project.longDescription || '',
     heroMedia: project.heroMedia || '',
     hoverMedia: project.hoverMedia || '',
+    videoStreamUrl: project.videoStreamUrl || '',
+    enableStreaming: Boolean(project.enableStreaming),
     gallery: project.gallery || [],
     videos: project.videos || [],
     tools: project.tools || [],

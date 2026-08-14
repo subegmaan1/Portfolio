@@ -46,7 +46,7 @@ export default function App() {
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [loading, setLoading] = useState<boolean>(false);
 
-  // Interaction States
+  // interaction States
   const [hoveredProject, setHoveredProject] = useState<Project | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
 
@@ -56,6 +56,101 @@ export default function App() {
   const [showLoginModal, setShowLoginModal] = useState<boolean>(false);
   const [adminTab, setAdminTab] = useState<AdminTab>('DASHBOARD');
   const [editingProject, setEditingProject] = useState<Partial<Project> | null>(null);
+
+  // Convert section name to URL hash
+  const sectionToHash = (sec: PublicNavSection): string => {
+    switch (sec) {
+      case 'PROJECTION DESIGN':
+        return '#/projection-design';
+      case 'IMMERSIVE MEDIA':
+        return '#/immersive-media';
+      case 'CONTACT':
+        return '#/contact';
+      case 'ABOUT':
+      default:
+        return '#/about';
+    }
+  };
+
+  // Convert URL hash to section name
+  const hashToSection = (hash: string): PublicNavSection => {
+    if (hash.includes('/projection-design')) return 'PROJECTION DESIGN';
+    if (hash.includes('/immersive-media')) return 'IMMERSIVE MEDIA';
+    if (hash.includes('/contact')) return 'CONTACT';
+    return 'ABOUT';
+  };
+
+  // Handle URL Hash Synchronization (Back/Forward browser buttons & deep-linking)
+  useEffect(() => {
+    const handleLocationChange = () => {
+      const hash = window.location.hash || '';
+
+      if (hash.startsWith('#/project/')) {
+        const slugOrId = hash.replace('#/project/', '').trim();
+        const found = projects.find(p => p.slug === slugOrId || p.id === slugOrId);
+        if (found) {
+          setSelectedProject(found);
+          return;
+        }
+      } else {
+        setSelectedProject(null);
+      }
+
+      if (hash === '#/admin') {
+        if (isAdminAuthenticated) {
+          setIsAdminOpen(true);
+        } else {
+          setShowLoginModal(true);
+        }
+        return;
+      }
+
+      if (isAdminOpen) {
+        setIsAdminOpen(false);
+      }
+
+      const sec = hashToSection(hash);
+      setActiveSection(sec);
+    };
+
+    handleLocationChange();
+
+    window.addEventListener('popstate', handleLocationChange);
+    window.addEventListener('hashchange', handleLocationChange);
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+      window.removeEventListener('hashchange', handleLocationChange);
+    };
+  }, [projects, isAdminAuthenticated, isAdminOpen]);
+
+  // Section Selector with browser history push
+  const handleSelectSection = (sec: PublicNavSection) => {
+    setActiveSection(sec);
+    const targetHash = sectionToHash(sec);
+    if (window.location.hash !== targetHash) {
+      window.history.pushState({ type: 'section', section: sec }, '', targetHash);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Project Open Selector with browser history push
+  const handleSelectProject = (proj: Project) => {
+    setSelectedProject(proj);
+    const targetHash = `#/project/${proj.slug || proj.id}`;
+    if (window.location.hash !== targetHash) {
+      window.history.pushState({ type: 'project', slug: proj.slug || proj.id }, '', targetHash);
+    }
+  };
+
+  // Project Close Handler with history cleanup
+  const handleCloseProject = () => {
+    setSelectedProject(null);
+    const currentHash = window.location.hash;
+    if (currentHash.startsWith('#/project/')) {
+      const fallbackHash = sectionToHash(activeSection);
+      window.history.replaceState({ type: 'section', section: activeSection }, '', fallbackHash);
+    }
+  };
 
   // Load store data
   const loadPublicData = async () => {
@@ -104,6 +199,7 @@ export default function App() {
   const handleOpenAdmin = () => {
     if (isAdminAuthenticated) {
       setIsAdminOpen(true);
+      window.history.pushState({ type: 'admin' }, '', '#/admin');
     } else {
       setShowLoginModal(true);
     }
@@ -113,7 +209,21 @@ export default function App() {
     setIsAdminAuthenticated(true);
     setShowLoginModal(false);
     setIsAdminOpen(true);
+    window.history.pushState({ type: 'admin' }, '', '#/admin');
     loadPublicData();
+  };
+
+  const handleAdminLogout = () => {
+    setIsAdminAuthenticated(false);
+    setIsAdminOpen(false);
+    const fallbackHash = sectionToHash(activeSection);
+    window.history.pushState({ type: 'section', section: activeSection }, '', fallbackHash);
+  };
+
+  const handleAdminViewSite = () => {
+    setIsAdminOpen(false);
+    const fallbackHash = sectionToHash(activeSection);
+    window.history.pushState({ type: 'section', section: activeSection }, '', fallbackHash);
   };
 
   // Render Admin Dashboard View
@@ -125,11 +235,8 @@ export default function App() {
           setEditingProject(null);
           setAdminTab(tab);
         }}
-        onLogout={() => {
-          setIsAdminAuthenticated(false);
-          setIsAdminOpen(false);
-        }}
-        onViewSite={() => setIsAdminOpen(false)}
+        onLogout={handleAdminLogout}
+        onViewSite={handleAdminViewSite}
       >
         {editingProject ? (
           <AdminProjectForm
@@ -195,10 +302,7 @@ export default function App() {
       {/* Top Restricted Navigation */}
       <HeaderNav
         activeSection={activeSection}
-        onSelectSection={sec => {
-          setActiveSection(sec);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
+        onSelectSection={handleSelectSection}
         onOpenAdmin={handleOpenAdmin}
         isAdminLoggedIn={isAdminAuthenticated}
         about={about}
@@ -224,10 +328,7 @@ export default function App() {
                 <AboutSection
                   about={about}
                   projects={projects}
-                  onNavigateToSection={sec => {
-                    setActiveSection(sec);
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  }}
+                  onNavigateToSection={handleSelectSection}
                 />
               )}
 
@@ -235,7 +336,7 @@ export default function App() {
               {activeSection === 'PROJECTION DESIGN' && (
                 <ProjectionDesignSection
                   projects={projects}
-                  onSelectProject={proj => setSelectedProject(proj)}
+                  onSelectProject={handleSelectProject}
                   onHoverProject={setHoveredProject}
                 />
               )}
@@ -244,7 +345,7 @@ export default function App() {
               {activeSection === 'IMMERSIVE MEDIA' && (
                 <ImmersiveMediaSection
                   projects={projects}
-                  onSelectProject={proj => setSelectedProject(proj)}
+                  onSelectProject={handleSelectProject}
                   onHoverProject={setHoveredProject}
                 />
               )}
@@ -262,8 +363,8 @@ export default function App() {
           <ProjectDetailModal
             project={selectedProject}
             allProjects={projects}
-            onClose={() => setSelectedProject(null)}
-            onSelectProject={proj => setSelectedProject(proj)}
+            onClose={handleCloseProject}
+            onSelectProject={handleSelectProject}
           />
         )}
       </AnimatePresence>

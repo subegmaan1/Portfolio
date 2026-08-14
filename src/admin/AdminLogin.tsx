@@ -78,25 +78,38 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onCancel }) =
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block font-mono text-xs text-neutral-400 uppercase mb-2">
-              Admin Password
-            </label>
+            <div className="flex justify-between items-center mb-2">
+              <label className="block font-mono text-xs text-neutral-400 uppercase">
+                Admin Password
+              </label>
+              <button
+                type="button"
+                onClick={() => setPassword('subeg2026')}
+                className="font-mono text-[10px] text-teal-400/80 hover:text-teal-300 transition-colors cursor-pointer"
+                title="Autofill default password"
+              >
+                (Default: subeg2026)
+              </button>
+            </div>
             <input
               type="password"
               value={password}
               onChange={e => setPassword(e.target.value)}
-              placeholder="Enter admin password..."
-              className="w-full px-4 py-3 bg-neutral-950 border border-neutral-800 text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-neutral-400 font-mono text-sm"
+              placeholder="Enter admin password (subeg2026)..."
+              className="w-full px-4 py-3 bg-neutral-950 border border-neutral-800 text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-teal-500 font-mono text-sm"
               autoFocus
               required
             />
           </div>
 
-          <div className="pt-2 flex justify-end items-center">
+          <div className="pt-2 flex justify-between items-center">
+            <span className="font-mono text-[10px] text-neutral-500">
+              Press Enter or click Login
+            </span>
             <button
               type="submit"
               disabled={loading}
-              className="px-6 py-2.5 bg-neutral-100 text-neutral-950 font-mono text-xs font-bold uppercase tracking-wider hover:bg-white transition-colors flex items-center space-x-2 disabled:opacity-50"
+              className="px-6 py-2.5 bg-neutral-100 text-neutral-950 font-mono text-xs font-bold uppercase tracking-wider hover:bg-white active:scale-95 transition-all flex items-center space-x-2 disabled:opacity-50 cursor-pointer shadow-md"
               id="admin-login-submit-btn"
             >
               <span>{loading ? 'Authenticating...' : 'Login'}</span>

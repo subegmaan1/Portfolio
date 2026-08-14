@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { Project } from '../types';
 import { parseVideoUrl } from '../lib/videoUtils';
+import { ProjectGalleryCarousel } from './ProjectGalleryCarousel';
 import { X, ArrowLeft, ArrowRight, Wrench, Users, Play, Video, ExternalLink } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -122,6 +123,14 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
           </div>
         )}
 
+        {/* Documentation Image Gallery Carousel (Positioned immediately below Hero Media) */}
+        {project.gallery && project.gallery.length > 0 && (
+          <ProjectGalleryCarousel
+            projectTitle={project.title}
+            items={project.gallery}
+          />
+        )}
+
         {/* Case Study Overview & Long Description */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-12 pt-6">
           <div className="md:col-span-8 space-y-8">
@@ -239,27 +248,6 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
             </div>
           );
         })()}
-
-        {/* Gallery Grid */}
-        {project.gallery && project.gallery.length > 0 && (
-          <div className="space-y-6 pt-12 border-t border-neutral-800/80">
-            <h3 className="font-mono text-xs uppercase tracking-widest text-neutral-400">
-              Visual Documentation Gallery
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              {project.gallery.map((img, idx) => (
-                <div key={idx} className="aspect-video bg-neutral-900 border border-neutral-800 overflow-hidden group">
-                  <img
-                    src={img}
-                    alt={`${project.title} gallery documentation ${idx + 1}`}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    referrerPolicy="no-referrer"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Video Embeds if any */}
         {project.videos && project.videos.length > 0 && (

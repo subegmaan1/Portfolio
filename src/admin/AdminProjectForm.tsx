@@ -56,19 +56,34 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
     e: React.ChangeEvent<HTMLInputElement>,
     target: 'hero' | 'hover' | 'gallery'
   ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
     setUploading(true);
+    setError('');
     try {
-      const media = await uploadMediaApi(file);
-      if (target === 'hero') setHeroMedia(media.url);
-      else if (target === 'hover') setHoverMedia(media.url);
-      else if (target === 'gallery') setGallery(prev => [...prev, media.url]);
+      if (target === 'gallery') {
+        const uploadedUrls: string[] = [];
+        for (let i = 0; i < files.length; i++) {
+          const media = await uploadMediaApi(files[i]);
+          if (media?.url) {
+            uploadedUrls.push(media.url);
+          }
+        }
+        if (uploadedUrls.length > 0) {
+          setGallery(prev => [...prev, ...uploadedUrls]);
+        }
+      } else {
+        const file = files[0];
+        const media = await uploadMediaApi(file);
+        if (target === 'hero') setHeroMedia(media.url);
+        else if (target === 'hover') setHoverMedia(media.url);
+      }
     } catch {
-      alert('Failed to upload file');
+      setError('Failed to upload file(s). Please try again.');
     } finally {
       setUploading(false);
+      e.target.value = '';
     }
   };
 
@@ -103,24 +118,28 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
       .map(t => t.trim())
       .filter(Boolean);
 
+    const cleanedGallery = gallery.map(g => g.trim()).filter(Boolean);
+    const cleanedVideos = videos.map(v => v.trim()).filter(Boolean);
+    const effectiveHeroMedia = heroMedia.trim() || (cleanedGallery.length > 0 ? cleanedGallery[0] : '');
+
     const projectData: Partial<Project> = {
       id: initialProject?.id,
-      title,
-      slug: slug || title.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+      title: title.trim(),
+      slug: slug.trim() || title.toLowerCase().replace(/[^a-z0-9]/g, '-'),
       category,
-      year,
-      role,
-      medium,
-      shortDescription,
-      longDescription,
-      heroMedia,
-      hoverMedia: hoverMedia || heroMedia,
-      videoStreamUrl,
+      year: year.trim(),
+      role: role.trim(),
+      medium: medium.trim(),
+      shortDescription: shortDescription.trim(),
+      longDescription: longDescription.trim(),
+      heroMedia: effectiveHeroMedia,
+      hoverMedia: hoverMedia.trim() || effectiveHeroMedia,
+      videoStreamUrl: videoStreamUrl.trim(),
       enableStreaming,
-      gallery,
-      videos,
+      gallery: cleanedGallery,
+      videos: cleanedVideos,
       tools: toolsArr,
-      credits: credits.filter(c => c.role && c.name),
+      credits: credits.filter(c => c.role.trim() && c.name.trim()),
       featured,
       published
     };
@@ -486,23 +505,30 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
           </div>
         </div>
 
-        {/* Gallery & Video Links */}
+        {/* Gallery Documentation Images */}
         <div className="bg-neutral-900/60 p-6 border border-neutral-800 space-y-6">
           <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <label className="text-neutral-400 uppercase">Gallery Images</label>
-              <div className="flex space-x-2">
+            <div className="flex flex-wrap justify-between items-center gap-3">
+              <div className="flex items-center space-x-3">
+                <label className="text-neutral-200 font-bold uppercase text-xs">Documentation Gallery Images</label>
+                <span className="px-2 py-0.5 bg-neutral-800 border border-neutral-700 text-teal-400 text-[10px] font-mono">
+                  {gallery.filter(Boolean).length} {gallery.filter(Boolean).length === 1 ? 'image' : 'images'}
+                </span>
+              </div>
+              <div className="flex items-center space-x-2">
                 <button
                   type="button"
                   onClick={addGalleryUrl}
-                  className="text-neutral-300 hover:text-white"
+                  className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-200 text-xs font-mono transition-colors"
                 >
                   + Add URL
                 </button>
-                <label className="text-amber-400 hover:text-amber-300 cursor-pointer">
-                  + Upload Image
+                <label className="px-3 py-1.5 bg-teal-500/20 hover:bg-teal-500/30 border border-teal-500/50 text-teal-300 text-xs font-mono font-bold cursor-pointer transition-colors flex items-center space-x-1.5">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>+ Upload Photos</span>
                   <input
                     type="file"
+                    multiple
                     onChange={e => handleFileUpload(e, 'gallery')}
                     className="hidden"
                     accept="image/*"
@@ -511,39 +537,99 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {gallery.map((url, idx) => (
-                <div key={idx} className="bg-neutral-950 p-2 border border-neutral-800 space-y-2">
-                  {url ? (
-                    <div className="aspect-video relative overflow-hidden bg-neutral-900 border border-neutral-800">
-                      <img src={url} alt="" className="w-full h-full object-cover" />
+            {gallery.length === 0 ? (
+              <div className="p-8 border border-dashed border-neutral-800 text-center font-mono text-xs text-neutral-500 space-y-2">
+                <p>No gallery images added yet.</p>
+                <p className="text-[11px] text-neutral-600">Click &quot;+ Upload Photos&quot; to select one or multiple images for the project carousel.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {gallery.map((url, idx) => (
+                  <div key={idx} className="bg-neutral-950 p-2.5 border border-neutral-800 space-y-2 group">
+                    <div className="aspect-video relative overflow-hidden bg-neutral-900 border border-neutral-800/80">
+                      {url ? (
+                        <img src={url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-neutral-600 font-mono text-[10px]">
+                          Enter image URL below
+                        </div>
+                      )}
+                      <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-neutral-950/80 font-mono text-[9px] text-neutral-400 border border-white/10">
+                        #{idx + 1}
+                      </span>
                     </div>
-                  ) : null}
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="text"
-                      value={url}
-                      placeholder="Paste image or video URL..."
-                      onChange={e => {
-                        const next = [...gallery];
-                        next[idx] = e.target.value;
-                        setGallery(next);
-                      }}
-                      className="flex-1 px-2.5 py-1.5 bg-neutral-900 border border-neutral-800 text-xs text-neutral-200 focus:outline-none"
-                      autoFocus={url === ''}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setGallery(prev => prev.filter((_, i) => i !== idx))}
-                      className="p-1.5 text-neutral-500 hover:text-red-400"
-                      title="Remove Item"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="text"
+                        value={url}
+                        placeholder="Image URL or data URI..."
+                        onChange={e => {
+                          const next = [...gallery];
+                          next[idx] = e.target.value;
+                          setGallery(next);
+                        }}
+                        className="flex-1 px-2 py-1.5 bg-neutral-900 border border-neutral-800 text-xs text-neutral-200 focus:outline-none focus:border-teal-500"
+                        autoFocus={url === ''}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setGallery(prev => prev.filter((_, i) => i !== idx))}
+                        className="p-1.5 text-neutral-500 hover:text-red-400 transition-colors"
+                        title="Remove Image"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {url && (
+                      <div className="flex justify-between items-center pt-1 border-t border-neutral-900 font-mono text-[10px]">
+                        <button
+                          type="button"
+                          onClick={() => setHeroMedia(url)}
+                          className="text-neutral-500 hover:text-teal-400"
+                          title="Use this image as Hero Media"
+                        >
+                          {heroMedia === url ? '★ Hero Media' : 'Set as Hero'}
+                        </button>
+                        <div className="flex space-x-2">
+                          {idx > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = [...gallery];
+                                const temp = next[idx - 1];
+                                next[idx - 1] = next[idx];
+                                next[idx] = temp;
+                                setGallery(next);
+                              }}
+                              className="text-neutral-500 hover:text-neutral-300"
+                            >
+                              &larr; Prev
+                            </button>
+                          )}
+                          {idx < gallery.length - 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = [...gallery];
+                                const temp = next[idx + 1];
+                                next[idx + 1] = next[idx];
+                                next[idx] = temp;
+                                setGallery(next);
+                              }}
+                              className="text-neutral-500 hover:text-neutral-300"
+                            >
+                              Next &rarr;
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
