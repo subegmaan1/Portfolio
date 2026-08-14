@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { SiteSettings } from '../types';
 import { exportFullBackup, importFullBackup, resetDemoDataApi, saveSettingsApi, getFirestoreStatus } from '../lib/api';
 import { Save, RefreshCw, Key, ShieldCheck, Download, Upload, Database, CheckCircle2, AlertTriangle } from 'lucide-react';
@@ -26,6 +26,15 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const status = getFirestoreStatus();
+
+  // Sync state if settings prop updates
+  useEffect(() => {
+    if (settings) {
+      setSiteTitle(settings.siteTitle || '');
+      setSiteDescription(settings.siteDescription || '');
+      setContactEmail(settings.contactEmail || '');
+    }
+  }, [settings]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();

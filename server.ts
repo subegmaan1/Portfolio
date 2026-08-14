@@ -198,8 +198,8 @@ async function startServer() {
 
   app.post('/api/projects', requireAdmin, (req, res) => {
     const data = processDataUrls(req.body);
-    const newId = `proj-${Date.now()}`;
-    const slug = data.slug || data.title.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+    const newId = data.id || `proj-${Date.now()}`;
+    const slug = data.slug || (data.title ? data.title.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-') : newId);
 
     const newProject: Project = {
       id: newId,
@@ -213,18 +213,25 @@ async function startServer() {
       longDescription: data.longDescription || '',
       heroMedia: data.heroMedia || '',
       hoverMedia: data.hoverMedia || data.heroMedia || '',
+      videoStreamUrl: data.videoStreamUrl || '',
+      enableStreaming: Boolean(data.enableStreaming),
       gallery: Array.isArray(data.gallery) ? data.gallery : [],
       videos: Array.isArray(data.videos) ? data.videos : [],
       tools: Array.isArray(data.tools) ? data.tools : [],
       credits: Array.isArray(data.credits) ? data.credits : [],
       featured: Boolean(data.featured),
       published: data.published !== undefined ? Boolean(data.published) : true,
-      sortOrder: currentStore.projects.length + 1,
-      createdAt: new Date().toISOString(),
+      sortOrder: data.sortOrder ?? (currentStore.projects.length + 1),
+      createdAt: data.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
 
-    currentStore.projects.push(newProject);
+    const existingIdx = currentStore.projects.findIndex(p => p.id === newId);
+    if (existingIdx !== -1) {
+      currentStore.projects[existingIdx] = newProject;
+    } else {
+      currentStore.projects.push(newProject);
+    }
     saveStore(currentStore);
 
     res.status(201).json(newProject);
@@ -232,14 +239,40 @@ async function startServer() {
 
   app.put('/api/projects/:id', requireAdmin, (req, res) => {
     const { id } = req.params;
+    const processedBody = processDataUrls(req.body);
     const index = currentStore.projects.findIndex(p => p.id === id);
 
     if (index === -1) {
-      res.status(404).json({ error: 'Project not found' });
+      const newProj: Project = {
+        id,
+        title: processedBody.title || 'Untitled Project',
+        slug: processedBody.slug || id,
+        category: processedBody.category || 'PROJECTION DESIGN',
+        year: processedBody.year || new Date().getFullYear().toString(),
+        role: processedBody.role || 'Projection Designer',
+        medium: processedBody.medium || '',
+        shortDescription: processedBody.shortDescription || '',
+        longDescription: processedBody.longDescription || '',
+        heroMedia: processedBody.heroMedia || '',
+        hoverMedia: processedBody.hoverMedia || '',
+        videoStreamUrl: processedBody.videoStreamUrl || '',
+        enableStreaming: Boolean(processedBody.enableStreaming),
+        gallery: Array.isArray(processedBody.gallery) ? processedBody.gallery : [],
+        videos: Array.isArray(processedBody.videos) ? processedBody.videos : [],
+        tools: Array.isArray(processedBody.tools) ? processedBody.tools : [],
+        credits: Array.isArray(processedBody.credits) ? processedBody.credits : [],
+        featured: Boolean(processedBody.featured),
+        published: processedBody.published !== undefined ? Boolean(processedBody.published) : true,
+        sortOrder: processedBody.sortOrder ?? (currentStore.projects.length + 1),
+        createdAt: processedBody.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      currentStore.projects.push(newProj);
+      saveStore(currentStore);
+      res.json(newProj);
       return;
     }
 
-    const processedBody = processDataUrls(req.body);
     const existing = currentStore.projects[index];
     const updated: Project = {
       ...existing,

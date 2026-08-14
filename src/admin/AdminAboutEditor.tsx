@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AboutData } from '../types';
 import { saveAboutApi, uploadMediaApi } from '../lib/api';
 import { Save, Plus, Trash2, Upload, Image as ImageIcon } from 'lucide-react';
@@ -22,6 +22,21 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+
+  // Sync state if about prop updates
+  useEffect(() => {
+    if (about) {
+      setName(about.name || 'SUBEG SINGH');
+      setTitle(about.title || 'Projection Designer & Immersive Media Designer');
+      setPrimaryPractice(about.primaryPractice || 'Digital Scenography / Projection Design');
+      setSecondaryPractice(about.secondaryPractice || 'Immersive Media');
+      setIntroduction(about.introduction || '');
+      setBackground(about.background || '');
+      setPracticeDescription(about.practiceDescription || '');
+      setCapabilities(about.capabilities || []);
+      setPhotoUrl(about.photoUrl || '');
+    }
+  }, [about]);
 
   const addCapability = () => {
     setCapabilities(prev => [...prev, '']);
