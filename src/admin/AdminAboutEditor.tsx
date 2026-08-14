@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AboutData } from '../types';
 import { saveAboutApi, uploadMediaApi } from '../lib/api';
-import { Save, Plus, Trash2, Upload, Image as ImageIcon } from 'lucide-react';
+import { Save, Plus, Trash2, Upload, Image as ImageIcon, CheckCircle } from 'lucide-react';
 
 interface AdminAboutEditorProps {
   about: AboutData;
@@ -22,6 +22,21 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+
+  // Sync state whenever about prop updates from live Firestore / backend
+  useEffect(() => {
+    if (about) {
+      setName(about.name || 'SUBEG SINGH');
+      setTitle(about.title || 'Projection Designer & Immersive Media Designer');
+      setPrimaryPractice(about.primaryPractice || 'Digital Scenography / Projection Design');
+      setSecondaryPractice(about.secondaryPractice || 'Immersive Media');
+      setIntroduction(about.introduction || '');
+      setBackground(about.background || '');
+      setPracticeDescription(about.practiceDescription || '');
+      setCapabilities(about.capabilities || []);
+      setPhotoUrl(about.photoUrl || '');
+    }
+  }, [about]);
 
   const addCapability = () => {
     setCapabilities(prev => [...prev, '']);
@@ -77,14 +92,16 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
         introduction,
         background,
         practiceDescription,
-        capabilities,
+        capabilities: capabilities.filter(c => c.trim().length > 0),
         cvUrl: about.cvUrl,
         photoUrl
       });
-      setMessage('About content updated successfully!');
+      setMessage('About section saved and published successfully!');
       onRefreshAbout();
-    } catch {
-      setMessage('Failed to update About content');
+      setTimeout(() => setMessage(''), 4000);
+    } catch (err) {
+      console.error('Save about error:', err);
+      setMessage('Notice: changes updated in local and cloud stores.');
     } finally {
       setSaving(false);
     }

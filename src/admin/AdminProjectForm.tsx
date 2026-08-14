@@ -389,14 +389,15 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
                 placeholder="Image or MP4 Video URL"
                 className="w-full px-4 py-2 bg-neutral-950 border border-neutral-800 text-neutral-100"
               />
-              <label className="inline-flex items-center space-x-2 px-3 py-1.5 bg-neutral-800 border border-neutral-700 text-neutral-200 cursor-pointer hover:bg-neutral-700">
+              <label className={`inline-flex items-center space-x-2 px-3 py-1.5 bg-neutral-800 border border-neutral-700 text-neutral-200 cursor-pointer hover:bg-neutral-700 ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
                 <Upload className="w-3.5 h-3.5" />
-                <span>Upload File</span>
+                <span>{uploading ? 'Optimizing...' : 'Upload File'}</span>
                 <input
                   type="file"
                   onChange={e => handleFileUpload(e, 'hero')}
                   className="hidden"
                   accept="image/*,video/*"
+                  disabled={uploading}
                 />
               </label>
               {heroMedia && (
@@ -416,14 +417,15 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
                 placeholder="Cursor preview URL (defaults to hero media)"
                 className="w-full px-4 py-2 bg-neutral-950 border border-neutral-800 text-neutral-100"
               />
-              <label className="inline-flex items-center space-x-2 px-3 py-1.5 bg-neutral-800 border border-neutral-700 text-neutral-200 cursor-pointer hover:bg-neutral-700">
+              <label className={`inline-flex items-center space-x-2 px-3 py-1.5 bg-neutral-800 border border-neutral-700 text-neutral-200 cursor-pointer hover:bg-neutral-700 ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
                 <Upload className="w-3.5 h-3.5" />
-                <span>Upload File</span>
+                <span>{uploading ? 'Optimizing...' : 'Upload File'}</span>
                 <input
                   type="file"
                   onChange={e => handleFileUpload(e, 'hover')}
                   className="hidden"
                   accept="image/*,video/*"
+                  disabled={uploading}
                 />
               </label>
             </div>
@@ -608,15 +610,16 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
                 >
                   + Add URL
                 </button>
-                <label className="px-3 py-1.5 bg-teal-500/20 hover:bg-teal-500/30 border border-teal-500/50 text-teal-300 text-xs font-mono font-bold cursor-pointer transition-colors flex items-center space-x-1.5">
+                <label className={`px-3 py-1.5 bg-teal-500/20 hover:bg-teal-500/30 border border-teal-500/50 text-teal-300 text-xs font-mono font-bold cursor-pointer transition-colors flex items-center space-x-1.5 ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
                   <Upload className="w-3.5 h-3.5" />
-                  <span>+ Upload Photos</span>
+                  <span>{uploading ? 'Optimizing Photos...' : '+ Upload Photos'}</span>
                   <input
                     type="file"
                     multiple
                     onChange={e => handleFileUpload(e, 'gallery')}
                     className="hidden"
                     accept="image/*"
+                    disabled={uploading}
                   />
                 </label>
               </div>

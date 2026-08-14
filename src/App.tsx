@@ -39,11 +39,38 @@ export default function App() {
   // Public Section State (Default homepage is ABOUT)
   const [activeSection, setActiveSection] = useState<PublicNavSection>('ABOUT');
 
-  // Core Data Stores initialized with fallback defaults for instant rendering
-  const [about, setAbout] = useState<AboutData>(initialAboutData);
-  const [contact, setContact] = useState<ContactData>(initialContactData);
-  const [settings, setSettings] = useState<SiteSettings>(initialSiteSettings);
-  const [projects, setProjects] = useState<Project[]>(initialProjects);
+  // Core Data Stores initialized with cached values for instant rendering without mock flash
+  const [about, setAbout] = useState<AboutData>(() => {
+    try {
+      const cached = localStorage.getItem('subeg_about_data');
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return initialAboutData;
+  });
+  const [contact, setContact] = useState<ContactData>(() => {
+    try {
+      const cached = localStorage.getItem('subeg_contact_data');
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return initialContactData;
+  });
+  const [settings, setSettings] = useState<SiteSettings>(() => {
+    try {
+      const cached = localStorage.getItem('subeg_site_settings');
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return initialSiteSettings;
+  });
+  const [projects, setProjects] = useState<Project[]>(() => {
+    try {
+      const cached = localStorage.getItem('subeg_projects_data');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [];
+  });
   const [loading, setLoading] = useState<boolean>(false);
 
   // interaction States

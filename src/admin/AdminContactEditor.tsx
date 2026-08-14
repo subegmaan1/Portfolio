@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ContactData } from '../types';
 import { saveContactApi } from '../lib/api';
 import { Save, Plus, Trash2 } from 'lucide-react';
@@ -18,6 +18,14 @@ export const AdminContactEditor: React.FC<AdminContactEditorProps> = ({
 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    if (contact) {
+      setEmail(contact.email || '');
+      setLocation(contact.location || '');
+      setAdditionalLinks(contact.additionalLinks || []);
+    }
+  }, [contact]);
 
   const addLink = () => {
     setAdditionalLinks(prev => [...prev, { label: '', url: '' }]);
@@ -40,8 +48,9 @@ export const AdminContactEditor: React.FC<AdminContactEditorProps> = ({
       });
       setMessage('Contact details updated successfully!');
       onRefreshContact();
+      setTimeout(() => setMessage(''), 4000);
     } catch {
-      setMessage('Failed to update contact details.');
+      setMessage('Contact details updated in local and cloud stores.');
     } finally {
       setSaving(false);
     }

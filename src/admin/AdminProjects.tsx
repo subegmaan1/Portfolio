@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Project } from '../types';
-import { deleteProjectApi, reorderProjectsApi, saveProjectApi } from '../lib/api';
+import { deleteProjectApi, reorderProjectsApi, saveProjectApi, flushAllMockDataApi } from '../lib/api';
 import { BatchPhotoProjectModal } from './BatchPhotoProjectModal';
 import {
   Plus,
@@ -14,7 +14,8 @@ import {
   GripVertical,
   Layers,
   ArrowUpDown,
-  Check
+  Check,
+  Sparkles
 } from 'lucide-react';
 
 interface AdminProjectsProps {
@@ -36,10 +37,27 @@ export const AdminProjects: React.FC<AdminProjectsProps> = ({
   const [loading, setLoading] = useState(false);
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
   const [reorderSuccess, setReorderSuccess] = useState(false);
+  const [flushMessage, setFlushMessage] = useState('');
 
   // Drag-and-drop state
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  const handleFlushDemoData = async () => {
+    if (confirm('Flush all deleted ghost projects and leftover mock demo data?')) {
+      setLoading(true);
+      try {
+        await flushAllMockDataApi();
+        setFlushMessage('Old demo & ghost data flushed successfully!');
+        onRefreshProjects();
+        setTimeout(() => setFlushMessage(''), 4000);
+      } catch {
+        onRefreshProjects();
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
 
   // Filter projects
   const filtered = projects.filter(p => {
@@ -174,6 +192,24 @@ export const AdminProjects: React.FC<AdminProjectsProps> = ({
               <span>Project order saved!</span>
             </div>
           )}
+
+          {flushMessage && (
+            <div className="px-3 py-1.5 bg-amber-950 border border-amber-800 text-amber-300 font-mono text-xs flex items-center space-x-1.5 animate-fade-in">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>{flushMessage}</span>
+            </div>
+          )}
+
+          <button
+            onClick={handleFlushDemoData}
+            disabled={loading}
+            title="Flush old demo projects and deleted ghost items"
+            className="px-3.5 py-2.5 bg-neutral-900 border border-neutral-700 text-neutral-300 font-mono text-xs hover:bg-neutral-800 hover:text-amber-300 transition-colors flex items-center space-x-1.5"
+            id="admin-flush-data-btn"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden sm:inline">Flush Ghost Data</span>
+          </button>
 
           <button
             onClick={() => setIsBatchModalOpen(true)}

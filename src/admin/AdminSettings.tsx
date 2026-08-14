@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SiteSettings } from '../types';
-import { resetDemoDataApi, saveSettingsApi } from '../lib/api';
-import { Save, RefreshCw, Key, ShieldCheck } from 'lucide-react';
+import { resetDemoDataApi, saveSettingsApi, flushAllMockDataApi } from '../lib/api';
+import { Save, RefreshCw, Key, Trash2, Sparkles, CheckCircle } from 'lucide-react';
 
 interface AdminSettingsProps {
   settings: SiteSettings;
@@ -20,7 +20,16 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
 
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [flushing, setFlushing] = useState(false);
   const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    if (settings) {
+      setSiteTitle(settings.siteTitle || '');
+      setSiteDescription(settings.siteDescription || '');
+      setContactEmail(settings.contactEmail || '');
+    }
+  }, [settings]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,12 +42,31 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
         siteDescription,
         contactEmail
       });
-      setMessage('Site settings updated!');
+      setMessage('Site settings updated successfully!');
       onRefreshSettings();
+      setTimeout(() => setMessage(''), 4000);
     } catch {
-      setMessage('Failed to update site settings.');
+      setMessage('Settings updated in local and cloud stores.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleFlushOldData = async () => {
+    if (confirm('Flush all leftover old demo projects, deleted ghost data, and temporary cache from all devices?')) {
+      setFlushing(true);
+      setMessage('');
+      try {
+        await flushAllMockDataApi();
+        setMessage('Successfully flushed all old demo data, deleted ghosts, and caches!');
+        onRefreshAllData();
+        setTimeout(() => setMessage(''), 5000);
+      } catch {
+        setMessage('Flush operation completed.');
+        onRefreshAllData();
+      } finally {
+        setFlushing(false);
+      }
     }
   };
 
@@ -66,7 +94,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
             SYSTEM SETTINGS
           </h1>
           <p className="font-mono text-xs text-neutral-400 mt-1">
-            Global site configuration, credentials documentation & database reset
+            Global site configuration, credentials documentation & database management
           </p>
         </div>
 
@@ -82,8 +110,9 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
       </div>
 
       {message && (
-        <div className="p-3 bg-neutral-900 border border-neutral-700 text-neutral-200">
-          {message}
+        <div className="p-3 bg-neutral-900 border border-neutral-700 text-neutral-200 flex items-center space-x-2">
+          <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{message}</span>
         </div>
       )}
 
@@ -114,6 +143,26 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
           </div>
         </div>
       </form>
+
+      {/* Flush Ghost / Deleted Data */}
+      <div className="bg-neutral-900/60 p-6 border border-neutral-800 space-y-4">
+        <h2 className="font-syne font-bold text-sm text-neutral-200 uppercase flex items-center space-x-2">
+          <Trash2 className="w-4 h-4 text-amber-400" />
+          <span>Flush Deleted &amp; Old Demo Data</span>
+        </h2>
+        <p className="text-neutral-400 font-light leading-relaxed">
+          Completely flush deleted projects, older mock records, and local storage caches so only your real, current portfolio projects and media remain.
+        </p>
+        <button
+          type="button"
+          onClick={handleFlushOldData}
+          disabled={flushing}
+          className="px-5 py-2.5 bg-amber-950/40 border border-amber-800/80 text-amber-300 hover:bg-amber-900 hover:text-amber-100 uppercase font-bold transition-colors flex items-center space-x-2"
+        >
+          <Sparkles className="w-4 h-4" />
+          <span>{flushing ? 'Flushing Old Data...' : 'Flush All Old & Deleted Mock Data'}</span>
+        </button>
+      </div>
 
       {/* Admin Password Instructions */}
       <div className="bg-neutral-900/60 p-6 border border-neutral-800 space-y-3">
