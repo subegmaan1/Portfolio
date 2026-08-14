@@ -41,12 +41,18 @@ export const AdminProjects: React.FC<AdminProjectsProps> = ({
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
-  // Filter projects
+  // Filter projects safely with null/undefined guards
   const filtered = projects.filter(p => {
+    if (!p) return false;
+    const titleStr = (p.title || '').toLowerCase();
+    const roleStr = (p.role || '').toLowerCase();
+    const mediumStr = (p.medium || '').toLowerCase();
+    const query = searchTerm.toLowerCase();
+
     const matchesSearch =
-      p.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.medium.toLowerCase().includes(searchTerm.toLowerCase());
+      titleStr.includes(query) ||
+      roleStr.includes(query) ||
+      mediumStr.includes(query);
 
     const matchesCategory =
       selectedCategory === 'ALL' || p.category === selectedCategory;
