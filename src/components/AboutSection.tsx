@@ -347,23 +347,6 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ about, projects = []
           ))}
         </div>
       </motion.div>
-
-      {/* Footer System Info */}
-      <footer className="mt-16 pt-8 border-t border-white/[0.05] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 text-xs">
-        <div className="flex gap-8">
-          <div className="flex flex-col gap-1">
-            <span className="font-mono text-[9px] text-white/40 uppercase tracking-[0.2em]">Primary</span>
-            <span className="text-xs text-neutral-300">{about.primaryPractice}</span>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="font-mono text-[9px] text-white/40 uppercase tracking-[0.2em]">Secondary</span>
-            <span className="text-xs text-neutral-300">{about.secondaryPractice}</span>
-          </div>
-        </div>
-        <div className="font-mono text-[9px] text-white/30 tracking-[0.1em] uppercase">
-          &copy; {new Date().getFullYear()} PORTFOLIO SYSTEM / SUBEG SINGH
-        </div>
-      </footer>
     </motion.section>
   );
 };

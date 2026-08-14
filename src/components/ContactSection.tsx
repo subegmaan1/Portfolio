@@ -108,12 +108,6 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ contact }) => {
           </div>
         )}
       </motion.div>
-
-      {/* Footer Copyright Signoff */}
-      <motion.div variants={itemVariants} className="pt-12 sm:pt-16 flex flex-col sm:flex-row items-center justify-between font-mono text-[10px] text-white/30 tracking-[0.1em] uppercase gap-4">
-        <span>&copy; {new Date().getFullYear()} SUBEG SINGH. All rights reserved.</span>
-        <span>Digital Scenography & Immersive Media</span>
-      </motion.div>
     </motion.section>
   );
 };

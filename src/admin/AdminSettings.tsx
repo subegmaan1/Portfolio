@@ -24,17 +24,22 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
   const [importing, setImporting] = useState(false);
   const [message, setMessage] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isDirtyRef = useRef(false);
 
   const status = getFirestoreStatus();
 
-  // Sync state if settings prop updates
+  // Sync state only if settings prop updates and user has not typed unsaved edits
   useEffect(() => {
-    if (settings) {
+    if (settings && !isDirtyRef.current) {
       setSiteTitle(settings.siteTitle || '');
       setSiteDescription(settings.siteDescription || '');
       setContactEmail(settings.contactEmail || '');
     }
   }, [settings]);
+
+  const markDirty = () => {
+    isDirtyRef.current = true;
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,7 +52,8 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
         siteDescription,
         contactEmail
       });
-      setMessage('Site settings updated and synced!');
+      isDirtyRef.current = false;
+      setMessage('Site settings updated and synced to Cloud Firestore & Server!');
       onRefreshSettings();
     } catch {
       setMessage('Failed to update site settings.');
@@ -221,7 +227,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
             <input
               type="text"
               value={siteTitle}
-              onChange={e => setSiteTitle(e.target.value)}
+              onChange={e => { markDirty(); setSiteTitle(e.target.value); }}
               className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 focus:border-neutral-500 outline-none"
             />
           </div>
@@ -230,7 +236,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
             <label className="block text-neutral-400 uppercase mb-2">Site SEO Description</label>
             <textarea
               value={siteDescription}
-              onChange={e => setSiteDescription(e.target.value)}
+              onChange={e => { markDirty(); setSiteDescription(e.target.value); }}
               rows={2}
               className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 focus:border-neutral-500 outline-none"
             />
@@ -241,7 +247,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
             <input
               type="email"
               value={contactEmail}
-              onChange={e => setContactEmail(e.target.value)}
+              onChange={e => { markDirty(); setContactEmail(e.target.value); }}
               className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 focus:border-neutral-500 outline-none"
             />
           </div>

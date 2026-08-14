@@ -17,15 +17,16 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
   const [background, setBackground] = useState(about.background || '');
   const [practiceDescription, setPracticeDescription] = useState(about.practiceDescription || '');
   const [capabilities, setCapabilities] = useState<string[]>(about.capabilities || []);
-  const [photoUrl, setPhotoUrl] = useState(about.photoUrl || '');
+  const [photoUrl, setPhotoUrl] = useState(about?.photoUrl || '');
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const isDirtyRef = React.useRef(false);
 
-  // Sync state if about prop updates
+  // Sync state only if about prop updates AND user has not made unsaved changes
   useEffect(() => {
-    if (about) {
+    if (about && !isDirtyRef.current) {
       setName(about.name || 'SUBEG SINGH');
       setTitle(about.title || 'Projection Designer & Immersive Media Designer');
       setPrimaryPractice(about.primaryPractice || 'Digital Scenography / Projection Design');
@@ -38,11 +39,17 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
     }
   }, [about]);
 
+  const markDirty = () => {
+    isDirtyRef.current = true;
+  };
+
   const addCapability = () => {
+    markDirty();
     setCapabilities(prev => [...prev, '']);
   };
 
   const removeCapability = (index: number) => {
+    markDirty();
     setCapabilities(prev => prev.filter((_, i) => i !== index));
   };
 
@@ -50,6 +57,7 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
     const file = e.target.files?.[0];
     if (!file) return;
 
+    markDirty();
     setUploadingPhoto(true);
     setMessage('');
 
@@ -93,10 +101,11 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
         background,
         practiceDescription,
         capabilities,
-        cvUrl: about.cvUrl,
+        cvUrl: about?.cvUrl,
         photoUrl
       });
-      setMessage('About content updated successfully!');
+      isDirtyRef.current = false;
+      setMessage('Saved to Cloud Firestore & Server storage successfully!');
       onRefreshAbout();
     } catch {
       setMessage('Failed to update About content');
@@ -144,7 +153,7 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
               <input
                 type="text"
                 value={name}
-                onChange={e => setName(e.target.value)}
+                onChange={e => { markDirty(); setName(e.target.value); }}
                 className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 font-syne font-bold text-lg"
                 required
               />
@@ -155,7 +164,7 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
               <input
                 type="text"
                 value={title}
-                onChange={e => setTitle(e.target.value)}
+                onChange={e => { markDirty(); setTitle(e.target.value); }}
                 className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 font-syne text-sm"
                 required
               />
@@ -168,7 +177,7 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
               <input
                 type="text"
                 value={primaryPractice}
-                onChange={e => setPrimaryPractice(e.target.value)}
+                onChange={e => { markDirty(); setPrimaryPractice(e.target.value); }}
                 className="w-full px-4 py-2 bg-neutral-950 border border-neutral-800 text-neutral-200"
               />
             </div>
@@ -178,7 +187,7 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
               <input
                 type="text"
                 value={secondaryPractice}
-                onChange={e => setSecondaryPractice(e.target.value)}
+                onChange={e => { markDirty(); setSecondaryPractice(e.target.value); }}
                 className="w-full px-4 py-2 bg-neutral-950 border border-neutral-800 text-neutral-200"
               />
             </div>
@@ -219,7 +228,7 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
                   type="text"
                   value={photoUrl}
                   placeholder="e.g. https://images.unsplash.com/photo-... or /uploads/..."
-                  onChange={e => setPhotoUrl(e.target.value)}
+                  onChange={e => { markDirty(); setPhotoUrl(e.target.value); }}
                   className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 text-neutral-100 font-mono text-xs focus:border-teal-500"
                 />
               </div>
@@ -240,7 +249,7 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
                 {photoUrl && (
                   <button
                     type="button"
-                    onClick={() => setPhotoUrl('')}
+                    onClick={() => { markDirty(); setPhotoUrl(''); }}
                     className="text-neutral-500 hover:text-rose-400 text-xs underline font-mono"
                   >
                     Remove Photo
@@ -260,7 +269,7 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
             <label className="block text-neutral-400 uppercase mb-2">Short Hero Introduction Statement</label>
             <textarea
               value={introduction}
-              onChange={e => setIntroduction(e.target.value)}
+              onChange={e => { markDirty(); setIntroduction(e.target.value); }}
               rows={2}
               className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 text-sm"
             />
@@ -270,7 +279,7 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
             <label className="block text-neutral-400 uppercase mb-2">01 &bull; Professional History / Background</label>
             <textarea
               value={background}
-              onChange={e => setBackground(e.target.value)}
+              onChange={e => { markDirty(); setBackground(e.target.value); }}
               rows={4}
               className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 text-sm"
             />
@@ -280,7 +289,7 @@ export const AdminAboutEditor: React.FC<AdminAboutEditorProps> = ({ about, onRef
             <label className="block text-neutral-400 uppercase mb-2">02 &bull; Digital Scenography & Practice Description</label>
             <textarea
               value={practiceDescription}
-              onChange={e => setPracticeDescription(e.target.value)}
+              onChange={e => { markDirty(); setPracticeDescription(e.target.value); }}
               rows={4}
               className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 text-sm"
             />

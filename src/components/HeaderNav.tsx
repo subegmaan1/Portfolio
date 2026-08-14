@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
 import { PublicNavSection } from '../types';
-import { Lock, Menu, X, Mail } from 'lucide-react';
+import { Menu, X, Mail } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface HeaderNavProps {
   activeSection: PublicNavSection;
   onSelectSection: (section: PublicNavSection) => void;
-  onOpenAdmin: () => void;
-  isAdminLoggedIn: boolean;
   about?: { name: string; title: string } | null;
 }
 
@@ -21,19 +19,12 @@ const NAV_ITEMS: { id: PublicNavSection; num: string; label: string }[] = [
 export const HeaderNav: React.FC<HeaderNavProps> = ({
   activeSection,
   onSelectSection,
-  onOpenAdmin,
-  isAdminLoggedIn,
   about
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const handleSelectMobile = (section: PublicNavSection) => {
     onSelectSection(section);
-    setMobileMenuOpen(false);
-  };
-
-  const handleAdminMobile = () => {
-    onOpenAdmin();
     setMobileMenuOpen(false);
   };
 
@@ -86,23 +77,6 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
                 </button>
               );
             })}
-
-            {/* Subtle Admin Link */}
-            <button
-              onClick={onOpenAdmin}
-              title={isAdminLoggedIn ? 'Admin Dashboard (Active)' : 'Admin Dashboard Login'}
-              className={`p-2 rounded border transition-all duration-300 flex items-center space-x-1.5 ${
-                isAdminLoggedIn
-                  ? 'text-amber-400 border-amber-400/30 hover:text-amber-300 bg-amber-400/10'
-                  : 'text-neutral-400 border-white/10 hover:text-white hover:border-white/30 hover:bg-white/5'
-              }`}
-              id="admin-dashboard-toggle-button"
-            >
-              <Lock className="w-3.5 h-3.5" />
-              <span className="font-mono text-[9px] tracking-widest uppercase">
-                {isAdminLoggedIn ? 'ADMIN' : 'LOGIN'}
-              </span>
-            </button>
           </nav>
 
           {/* Mobile Right Controls (visible on small screens) */}
@@ -120,20 +94,6 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
             >
               <Mail className="w-3.5 h-3.5 text-teal-400" />
               <span>CONTACT</span>
-            </button>
-
-            {/* Admin Lock Button */}
-            <button
-              onClick={handleAdminMobile}
-              title={isAdminLoggedIn ? 'Admin Active' : 'Admin Login'}
-              className={`p-2 rounded border transition-colors ${
-                isAdminLoggedIn
-                  ? 'text-amber-400 border-amber-400/40 bg-amber-400/10'
-                  : 'text-neutral-400 border-white/10 hover:text-white hover:bg-white/5'
-              }`}
-              id="mobile-admin-toggle-btn"
-            >
-              <Lock className="w-3.5 h-3.5" />
             </button>
 
             {/* Mobile Menu Hamburger Toggle */}
@@ -186,21 +146,6 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
                     </button>
                   );
                 })}
-              </div>
-
-              {/* Admin Button inside Mobile Drawer */}
-              <div className="pt-4">
-                <button
-                  onClick={handleAdminMobile}
-                  className={`w-full py-3.5 px-4 border font-mono text-xs tracking-widest uppercase flex items-center justify-center space-x-2 transition-all ${
-                    isAdminLoggedIn
-                      ? 'border-amber-400/50 bg-amber-400/10 text-amber-300'
-                      : 'border-white/10 hover:border-white/30 bg-neutral-900 text-neutral-300'
-                  }`}
-                >
-                  <Lock className="w-4 h-4 text-amber-400" />
-                  <span>{isAdminLoggedIn ? 'OPEN ADMIN DASHBOARD' : 'ADMIN DASHBOARD LOGIN'}</span>
-                </button>
               </div>
             </div>
 

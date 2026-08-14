@@ -18,6 +18,7 @@ import { AboutSection } from './components/AboutSection';
 import { ProjectionDesignSection } from './components/ProjectionDesignSection';
 import { ImmersiveMediaSection } from './components/ImmersiveMediaSection';
 import { ContactSection } from './components/ContactSection';
+import { Footer } from './components/Footer';
 import { ProjectDetailModal } from './components/ProjectDetailModal';
 import { ProjectHoverPreview } from './components/ProjectHoverPreview';
 
@@ -314,8 +315,6 @@ export default function App() {
       <HeaderNav
         activeSection={activeSection}
         onSelectSection={handleSelectSection}
-        onOpenAdmin={handleOpenAdmin}
-        isAdminLoggedIn={isAdminAuthenticated}
         about={about}
       />
 
@@ -367,6 +366,16 @@ export default function App() {
           </AnimatePresence>
         )}
       </main>
+
+      {/* Global Site Footer with Admin Login at bottom */}
+      {!loading && about && (
+        <Footer
+          onOpenAdmin={handleOpenAdmin}
+          isAdminLoggedIn={isAdminAuthenticated}
+          onSelectSection={handleSelectSection}
+          about={about}
+        />
+      )}
 
       {/* Case Study Detail Modal Overlay */}
       <AnimatePresence>

@@ -20,21 +20,28 @@ export const AdminContactEditor: React.FC<AdminContactEditorProps> = ({
 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const isDirtyRef = React.useRef(false);
 
-  // Sync state if contact prop updates from server/storage
+  // Sync state only if contact prop updates AND user has not made unsaved changes
   useEffect(() => {
-    if (contact) {
+    if (contact && !isDirtyRef.current) {
       setEmail(contact.email || '');
       setLocation(contact.location || '');
       setAdditionalLinks(contact.additionalLinks || []);
     }
   }, [contact]);
 
+  const markDirty = () => {
+    isDirtyRef.current = true;
+  };
+
   const addLink = () => {
+    markDirty();
     setAdditionalLinks(prev => [...prev, { label: '', url: '' }]);
   };
 
   const removeLink = (index: number) => {
+    markDirty();
     setAdditionalLinks(prev => prev.filter((_, i) => i !== index));
   };
 
@@ -50,7 +57,8 @@ export const AdminContactEditor: React.FC<AdminContactEditorProps> = ({
         location: location.trim(),
         additionalLinks: validLinks
       });
-      setMessage('Contact details successfully saved & synced to all pages!');
+      isDirtyRef.current = false;
+      setMessage('Contact details saved to Cloud Firestore & Server storage successfully!');
       onRefreshContact();
     } catch (err) {
       console.error('Failed to update contact:', err);
@@ -119,7 +127,7 @@ export const AdminContactEditor: React.FC<AdminContactEditorProps> = ({
               <input
                 type="email"
                 value={email}
-                onChange={e => setEmail(e.target.value)}
+                onChange={e => { markDirty(); setEmail(e.target.value); }}
                 placeholder="subegsingh@example.com"
                 className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 font-syne font-bold text-base focus:border-teal-400 outline-none"
                 required
@@ -137,7 +145,7 @@ export const AdminContactEditor: React.FC<AdminContactEditorProps> = ({
                 <input
                   type="text"
                   value={location}
-                  onChange={e => setLocation(e.target.value)}
+                  onChange={e => { markDirty(); setLocation(e.target.value); }}
                   placeholder="New York / Global Commissions"
                   className="w-full px-4 py-2 bg-neutral-950 border border-neutral-800 text-neutral-200 focus:border-teal-400 outline-none"
                 />
