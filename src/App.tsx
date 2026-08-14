@@ -39,25 +39,51 @@ export default function App() {
   // Public Section State (Default homepage is ABOUT)
   const [activeSection, setActiveSection] = useState<PublicNavSection>('ABOUT');
 
-  // Core Data Stores initialized with cached values for instant rendering without mock flash
+  // Core Data Stores initialized with cached values for instant rendering
   const [about, setAbout] = useState<AboutData>(() => {
     try {
       const cached = localStorage.getItem('subeg_about_data');
-      if (cached) return JSON.parse(cached);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && typeof parsed === 'object') {
+          return {
+            ...initialAboutData,
+            ...parsed,
+            capabilities: Array.isArray(parsed.capabilities) ? parsed.capabilities : initialAboutData.capabilities
+          };
+        }
+      }
     } catch {}
     return initialAboutData;
   });
   const [contact, setContact] = useState<ContactData>(() => {
     try {
       const cached = localStorage.getItem('subeg_contact_data');
-      if (cached) return JSON.parse(cached);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && typeof parsed === 'object') {
+          return {
+            ...initialContactData,
+            ...parsed,
+            additionalLinks: Array.isArray(parsed.additionalLinks) ? parsed.additionalLinks : initialContactData.additionalLinks
+          };
+        }
+      }
     } catch {}
     return initialContactData;
   });
   const [settings, setSettings] = useState<SiteSettings>(() => {
     try {
       const cached = localStorage.getItem('subeg_site_settings');
-      if (cached) return JSON.parse(cached);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && typeof parsed === 'object') {
+          return {
+            ...initialSiteSettings,
+            ...parsed
+          };
+        }
+      }
     } catch {}
     return initialSiteSettings;
   });
@@ -66,10 +92,10 @@ export default function App() {
       const cached = localStorage.getItem('subeg_projects_data');
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch {}
-    return [];
+    return initialProjects;
   });
   const [loading, setLoading] = useState<boolean>(false);
 
@@ -206,14 +232,23 @@ export default function App() {
 
   useEffect(() => {
     verifyAdminStatus();
+    loadPublicData();
 
     const unsubProjects = subscribeProjects(data => {
-      setProjects(data);
+      if (Array.isArray(data) && data.length > 0) {
+        setProjects(data);
+      }
       setLoading(false);
     });
-    const unsubAbout = subscribeAboutData(data => setAbout(data));
-    const unsubContact = subscribeContactData(data => setContact(data));
-    const unsubSettings = subscribeSiteSettings(data => setSettings(data));
+    const unsubAbout = subscribeAboutData(data => {
+      if (data) setAbout(data);
+    });
+    const unsubContact = subscribeContactData(data => {
+      if (data) setContact(data);
+    });
+    const unsubSettings = subscribeSiteSettings(data => {
+      if (data) setSettings(data);
+    });
 
     return () => {
       unsubProjects();
