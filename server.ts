@@ -118,6 +118,8 @@ async function startServer() {
       const token = authHeader.replace(/^Bearer\s+/i, '').trim();
       if (token === ADMIN_TOKEN_VAL || token.startsWith('subeg-admin')) return true;
     }
+    const xAdminToken = (req.headers['x-admin-token'] as string) || '';
+    if (xAdminToken === ADMIN_TOKEN_VAL || xAdminToken.startsWith('subeg-admin')) return true;
     return false;
   };
 

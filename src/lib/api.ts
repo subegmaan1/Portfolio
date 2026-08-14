@@ -5,8 +5,7 @@ import {
   getDoc,
   setDoc,
   deleteDoc,
-  writeBatch,
-  getDocFromServer
+  writeBatch
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { AboutData, ContactData, MediaItem, Project, SiteSettings } from '../types';
@@ -52,14 +51,25 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path
   };
-  console.warn('Firestore Error Context:', JSON.stringify(errInfo));
+  console.warn('Firestore Operation Notice:', JSON.stringify(errInfo));
 }
 
-// Check connection to Firestore on initialization
-if (typeof window !== 'undefined' && db) {
-  try {
-    getDocFromServer(doc(db, 'system', 'connection')).catch(() => {});
-  } catch {}
+// Timeout helper so Firebase NEVER hangs or blocks UI saves/fetches
+function withTimeout<T>(promise: Promise<T>, timeoutMs = 2000, fallback: T): Promise<T> {
+  let timer: any;
+  const timeoutPromise = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), timeoutMs);
+  });
+  return Promise.race([
+    promise.then((res) => {
+      clearTimeout(timer);
+      return res;
+    }),
+    timeoutPromise
+  ]).catch(() => {
+    clearTimeout(timer);
+    return fallback;
+  });
 }
 
 const ADMIN_TOKEN_KEY = 'subeg_admin_token';
@@ -87,7 +97,10 @@ export function getAdminToken(): string {
 
 function getAuthHeaders(): Record<string, string> {
   const token = getAdminToken() || DEFAULT_ADMIN_TOKEN;
-  return { Authorization: `Bearer ${token}` };
+  return {
+    Authorization: `Bearer ${token}`,
+    'X-Admin-Token': token
+  };
 }
 
 // Global broadcast event for 0ms cross-component and cross-tab UI reactivity
@@ -99,13 +112,12 @@ function broadcastStoreUpdate(type: 'projects' | 'about' | 'contact' | 'settings
   }
 }
 
-// Convert File to highly optimized, lightweight Data URL for universal cross-device persistence
+// Convert File to highly optimized Data URL
 export async function fileToDataUrl(file: File): Promise<string> {
   const isImage =
     file.type.startsWith('image/') ||
     /\.(jpe?g|png|webp|avif|gif|bmp|tiff|heic|jfif)$/i.test(file.name);
 
-  // If it's an image and in browser environment, run ultra-fast canvas compression
   if (isImage && typeof window !== 'undefined') {
     return new Promise((resolve) => {
       let objectUrl: string | null = null;
@@ -138,7 +150,7 @@ export async function fileToDataUrl(file: File): Promise<string> {
         reader.onload = () => resolve(reader.result as string);
         reader.onerror = () => resolve('');
         reader.readAsDataURL(file);
-      }, 6000);
+      }, 5000);
 
       img.onload = () => {
         cleanup();
@@ -179,32 +191,16 @@ export async function fileToDataUrl(file: File): Promise<string> {
 
           ctx.fillStyle = '#121212';
           ctx.fillRect(0, 0, width, height);
-
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(img, 0, 0, width, height);
 
-          let quality = 0.74;
+          let quality = 0.75;
           let optimized = canvas.toDataURL('image/jpeg', quality);
 
           if (optimized.length > 95000) {
             quality = 0.60;
             optimized = canvas.toDataURL('image/jpeg', quality);
-          }
-
-          if (optimized.length > 95000) {
-            const downscaledCanvas = document.createElement('canvas');
-            downscaledCanvas.width = Math.max(1, Math.round(width * 0.75));
-            downscaledCanvas.height = Math.max(1, Math.round(height * 0.75));
-            const downCtx = downscaledCanvas.getContext('2d', { alpha: false });
-            if (downCtx) {
-              downCtx.fillStyle = '#121212';
-              downCtx.fillRect(0, 0, downscaledCanvas.width, downscaledCanvas.height);
-              downCtx.imageSmoothingEnabled = true;
-              downCtx.imageSmoothingQuality = 'high';
-              downCtx.drawImage(img, 0, 0, downscaledCanvas.width, downscaledCanvas.height);
-              optimized = downscaledCanvas.toDataURL('image/jpeg', 0.55);
-            }
           }
 
           resolve(optimized);
@@ -228,7 +224,6 @@ export async function fileToDataUrl(file: File): Promise<string> {
     });
   }
 
-  // Non-image files (e.g. PDFs or media)
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
@@ -237,19 +232,14 @@ export async function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-// Track Firestore availability status
-let isFirestoreAvailable = Boolean(db);
-
 export function getFirestoreStatus(): { available: boolean; mode: string } {
   return {
-    available: isFirestoreAvailable,
-    mode: isFirestoreAvailable
-      ? 'Cloud Firestore & Server Synchronization Active'
-      : 'Server Storage & Local Cache Active'
+    available: Boolean(db),
+    mode: 'Multi-Tier Active (Cloud Firestore + Server Datastore + Instant Local Storage)'
   };
 }
 
-// Helper to fetch directly from Server Backend API
+// Fetch helper directly from Server Backend API
 async function fetchFromServer<T>(endpoint: string, fallback: T): Promise<T> {
   try {
     const res = await fetch(`/api/${endpoint}`, {
@@ -259,20 +249,32 @@ async function fetchFromServer<T>(endpoint: string, fallback: T): Promise<T> {
       return await res.json();
     }
   } catch (err) {
-    console.warn(`Server API /api/${endpoint} notice:`, err);
+    console.warn(`Notice reading /api/${endpoint}:`, err);
   }
   return fallback;
 }
 
-// Track cached representations to prevent unnecessary UI renders
+// Background sync helper to save to Firestore safely without blocking user flow
+async function syncToFirestoreAsync(collectionName: string, docId: string, data: any) {
+  if (!db) return;
+  try {
+    const writePromise = setDoc(doc(db, collectionName, docId), data, { merge: true });
+    await withTimeout(writePromise, 2500, null);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `${collectionName}/${docId}`);
+  }
+}
+
+// Cache trackers
 let lastProjectsJson = '';
 let lastAboutJson = '';
 let lastContactJson = '';
 let lastSettingsJson = '';
 
-// Subscribe to real-time project updates across devices
+// ==================== PROJECTS ====================
+
 export function subscribeProjects(callback: (projects: Project[]) => void): () => void {
-  // 1. Deliver local cache immediately for instant 0ms UI
+  // 1. Instant local cache delivery
   try {
     const local = localStorage.getItem('subeg_projects_data');
     if (local) {
@@ -284,8 +286,8 @@ export function subscribeProjects(callback: (projects: Project[]) => void): () =
     }
   } catch {}
 
-  // 2. Fetch fresh data from authoritative sources
-  fetchProjects().then(projects => {
+  // 2. Fetch fresh authoritative data
+  fetchProjects().then((projects) => {
     const jsonStr = JSON.stringify(projects);
     if (jsonStr !== lastProjectsJson) {
       lastProjectsJson = jsonStr;
@@ -317,12 +319,30 @@ export function subscribeProjects(callback: (projects: Project[]) => void): () =
 }
 
 export async function fetchProjects(category?: string): Promise<Project[]> {
-  // 1. Try Firestore First
-  if (db && isFirestoreAvailable) {
+  // 1. Authoritative Server Backend API (fastest & robust)
+  let serverProjects: Project[] | null = null;
+  try {
+    const fetched = await fetchFromServer<Project[]>('projects', []);
+    if (Array.isArray(fetched) && fetched.length > 0) {
+      serverProjects = fetched;
+      try {
+        localStorage.setItem('subeg_projects_data', JSON.stringify(serverProjects));
+      } catch {}
+    }
+  } catch {}
+
+  if (serverProjects && serverProjects.length > 0) {
+    return category && category !== 'ALL'
+      ? serverProjects.filter((p) => p.category === category)
+      : serverProjects;
+  }
+
+  // 2. Try Firestore with timeout protection
+  if (db) {
     try {
-      const snapshot = await getDocs(collection(db, 'projects'));
-      if (!snapshot.empty) {
-        const firestoreProjects: Project[] = snapshot.docs.map(d => ({
+      const snapshot = await withTimeout(getDocs(collection(db, 'projects')), 2000, null);
+      if (snapshot && !snapshot.empty) {
+        const firestoreProjects: Project[] = snapshot.docs.map((d) => ({
           id: d.id,
           ...d.data()
         } as Project));
@@ -333,7 +353,7 @@ export async function fetchProjects(category?: string): Promise<Project[]> {
             localStorage.setItem('subeg_projects_data', JSON.stringify(firestoreProjects));
           } catch {}
           return category && category !== 'ALL'
-            ? firestoreProjects.filter(p => p.category === category)
+            ? firestoreProjects.filter((p) => p.category === category)
             : firestoreProjects;
         }
       }
@@ -342,20 +362,7 @@ export async function fetchProjects(category?: string): Promise<Project[]> {
     }
   }
 
-  // 2. Authoritative Server Backend API
-  try {
-    const serverProjects = await fetchFromServer<Project[]>('projects', []);
-    if (Array.isArray(serverProjects) && serverProjects.length > 0) {
-      try {
-        localStorage.setItem('subeg_projects_data', JSON.stringify(serverProjects));
-      } catch {}
-      return category && category !== 'ALL'
-        ? serverProjects.filter(p => p.category === category)
-        : serverProjects;
-    }
-  } catch {}
-
-  // 3. LocalStorage Cache
+  // 3. LocalStorage Cache fallback
   try {
     const local = localStorage.getItem('subeg_projects_data');
     if (local) {
@@ -368,18 +375,17 @@ export async function fetchProjects(category?: string): Promise<Project[]> {
     }
   } catch {}
 
-  // 4. Default Initial Projects
+  // 4. Default Seed Projects
   return category && category !== 'ALL'
-    ? initialProjects.filter(p => p.category === category)
+    ? initialProjects.filter((p) => p.category === category)
     : initialProjects;
 }
 
 export async function fetchProjectByIdOrSlug(idOrSlug: string): Promise<Project> {
   const all = await fetchProjects();
-  const found = all.find(p => p.id === idOrSlug || p.slug === idOrSlug);
+  const found = all.find((p) => p.id === idOrSlug || p.slug === idOrSlug);
   if (found) return found;
 
-  // Try direct server endpoint
   try {
     const proj = await fetchFromServer<Project | null>(`projects/${idOrSlug}`, null);
     if (proj) return proj;
@@ -388,7 +394,137 @@ export async function fetchProjectByIdOrSlug(idOrSlug: string): Promise<Project>
   throw new Error('Project not found');
 }
 
-// Subscribe to About data
+export async function saveProjectApi(project: Partial<Project>): Promise<Project> {
+  const id = project.id || `proj_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  const fullProject: Project = {
+    id,
+    title: project.title || 'Untitled Project',
+    slug: project.slug || (project.title ? project.title.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-') : id),
+    category: project.category || 'PROJECTION DESIGN',
+    year: project.year || new Date().getFullYear().toString(),
+    role: project.role || 'Projection Designer',
+    medium: project.medium || '',
+    shortDescription: project.shortDescription || '',
+    longDescription: project.longDescription || '',
+    heroMedia: project.heroMedia || '',
+    hoverMedia: project.hoverMedia || project.heroMedia || '',
+    videoStreamUrl: project.videoStreamUrl || '',
+    enableStreaming: Boolean(project.enableStreaming),
+    gallery: project.gallery || [],
+    videos: project.videos || [],
+    tools: project.tools || [],
+    credits: project.credits || [],
+    featured: Boolean(project.featured),
+    published: project.published ?? true,
+    sortOrder: project.sortOrder ?? 0,
+    createdAt: project.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  // 1. Immediately update LocalStorage cache & dispatch broadcast (0ms instant UI update)
+  try {
+    const existingList: Project[] = JSON.parse(localStorage.getItem('subeg_projects_data') || '[]');
+    const idx = existingList.findIndex((p) => p.id === id);
+    if (idx !== -1) {
+      existingList[idx] = fullProject;
+    } else {
+      existingList.unshift(fullProject);
+    }
+    localStorage.setItem('subeg_projects_data', JSON.stringify(existingList));
+    broadcastStoreUpdate('projects', existingList);
+  } catch {}
+
+  // 2. Persist to Express Server Backend immediately
+  try {
+    const isEdit = Boolean(project.id);
+    const url = isEdit ? `/api/projects/${id}` : '/api/projects';
+    const method = isEdit ? 'PUT' : 'POST';
+    await fetch(url, {
+      method,
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify(fullProject)
+    });
+  } catch (e) {
+    console.warn('Notice saving project to server backend:', e);
+  }
+
+  // 3. Non-blocking background sync to Cloud Firestore
+  syncToFirestoreAsync('projects', id, fullProject);
+
+  return fullProject;
+}
+
+export async function deleteProjectApi(id: string): Promise<void> {
+  // 1. Delete from LocalStorage & broadcast immediately
+  try {
+    const existingList: Project[] = JSON.parse(localStorage.getItem('subeg_projects_data') || '[]');
+    const filtered = existingList.filter((p) => p.id !== id);
+    localStorage.setItem('subeg_projects_data', JSON.stringify(filtered));
+    broadcastStoreUpdate('projects', filtered);
+  } catch {}
+
+  // 2. Delete from Server
+  try {
+    await fetch(`/api/projects/${id}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: getAuthHeaders()
+    });
+  } catch (e) {
+    console.warn('Notice deleting project on server backend:', e);
+  }
+
+  // 3. Non-blocking delete from Firestore
+  if (db) {
+    withTimeout(deleteDoc(doc(db, 'projects', id)), 2000, null).catch(() => {});
+  }
+}
+
+export async function reorderProjectsApi(projectIds: string[]): Promise<void> {
+  // 1. Update local & broadcast immediately
+  try {
+    const existingList: Project[] = JSON.parse(localStorage.getItem('subeg_projects_data') || '[]');
+    const projectMap = new Map(existingList.map((p) => [p.id, p]));
+    const reordered: Project[] = [];
+    projectIds.forEach((id, idx) => {
+      const p = projectMap.get(id);
+      if (p) reordered.push({ ...p, sortOrder: idx });
+    });
+    existingList.forEach((p) => {
+      if (!projectIds.includes(p.id)) reordered.push(p);
+    });
+    localStorage.setItem('subeg_projects_data', JSON.stringify(reordered));
+    broadcastStoreUpdate('projects', reordered);
+  } catch {}
+
+  // 2. Server reorder
+  try {
+    await fetch('/api/projects/reorder', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify({ projectIds })
+    });
+  } catch (e) {
+    console.warn('Notice reordering on server:', e);
+  }
+
+  // 3. Firestore batch update non-blocking
+  if (db) {
+    try {
+      const batch = writeBatch(db);
+      projectIds.forEach((id, index) => {
+        const docRef = doc(db, 'projects', id);
+        batch.update(docRef, { sortOrder: index });
+      });
+      withTimeout(batch.commit(), 2500, null).catch(() => {});
+    } catch {}
+  }
+}
+
+// ==================== ABOUT ====================
+
 export function subscribeAboutData(callback: (about: AboutData) => void): () => void {
   try {
     const local = localStorage.getItem('subeg_about_data');
@@ -398,7 +534,7 @@ export function subscribeAboutData(callback: (about: AboutData) => void): () => 
     }
   } catch {}
 
-  fetchAboutData().then(data => {
+  fetchAboutData().then((data) => {
     const jsonStr = JSON.stringify(data);
     if (jsonStr !== lastAboutJson) {
       lastAboutJson = jsonStr;
@@ -429,11 +565,22 @@ export function subscribeAboutData(callback: (about: AboutData) => void): () => 
 }
 
 export async function fetchAboutData(): Promise<AboutData> {
-  // 1. Try Firestore First
-  if (db && isFirestoreAvailable) {
+  // 1. Try Server API first
+  try {
+    const serverAbout = await fetchFromServer<AboutData>('about', initialAboutData);
+    if (serverAbout && (serverAbout.name || serverAbout.introduction)) {
+      try {
+        localStorage.setItem('subeg_about_data', JSON.stringify(serverAbout));
+      } catch {}
+      return serverAbout;
+    }
+  } catch {}
+
+  // 2. Try Firestore with timeout protection
+  if (db) {
     try {
-      const docSnap = await getDoc(doc(db, 'about', 'main'));
-      if (docSnap.exists()) {
+      const docSnap = await withTimeout(getDoc(doc(db, 'about', 'main')), 2000, null);
+      if (docSnap && docSnap.exists()) {
         const data = docSnap.data() as AboutData;
         if (data && (data.name || data.introduction)) {
           try {
@@ -447,17 +594,6 @@ export async function fetchAboutData(): Promise<AboutData> {
     }
   }
 
-  // 2. Authoritative Server API
-  try {
-    const serverAbout = await fetchFromServer<AboutData>('about', initialAboutData);
-    if (serverAbout && (serverAbout.name || serverAbout.introduction)) {
-      try {
-        localStorage.setItem('subeg_about_data', JSON.stringify(serverAbout));
-      } catch {}
-      return serverAbout;
-    }
-  } catch {}
-
   // 3. LocalStorage Cache
   try {
     const local = localStorage.getItem('subeg_about_data');
@@ -467,7 +603,41 @@ export async function fetchAboutData(): Promise<AboutData> {
   return initialAboutData;
 }
 
-// Subscribe to Contact data
+export async function saveAboutApi(data: Partial<AboutData>): Promise<AboutData> {
+  let existingAbout: AboutData = initialAboutData;
+  try {
+    const local = localStorage.getItem('subeg_about_data');
+    if (local) existingAbout = JSON.parse(local);
+  } catch {}
+
+  const updated: AboutData = { ...existingAbout, ...data };
+
+  // 1. Update LocalStorage immediately & broadcast (0ms instant reactivity)
+  try {
+    localStorage.setItem('subeg_about_data', JSON.stringify(updated));
+    broadcastStoreUpdate('about', updated);
+  } catch {}
+
+  // 2. Save to Server Backend
+  try {
+    await fetch('/api/about', {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify(updated)
+    });
+  } catch (e) {
+    console.warn('Notice saving about to server backend:', e);
+  }
+
+  // 3. Non-blocking Firestore save
+  syncToFirestoreAsync('about', 'main', updated);
+
+  return updated;
+}
+
+// ==================== CONTACT ====================
+
 export function subscribeContactData(callback: (contact: ContactData) => void): () => void {
   try {
     const local = localStorage.getItem('subeg_contact_data');
@@ -477,7 +647,7 @@ export function subscribeContactData(callback: (contact: ContactData) => void): 
     }
   } catch {}
 
-  fetchContactData().then(data => {
+  fetchContactData().then((data) => {
     const jsonStr = JSON.stringify(data);
     if (jsonStr !== lastContactJson) {
       lastContactJson = jsonStr;
@@ -508,11 +678,22 @@ export function subscribeContactData(callback: (contact: ContactData) => void): 
 }
 
 export async function fetchContactData(): Promise<ContactData> {
-  // 1. Try Firestore First
-  if (db && isFirestoreAvailable) {
+  // 1. Try Server API first
+  try {
+    const serverContact = await fetchFromServer<ContactData>('contact', initialContactData);
+    if (serverContact && (serverContact.email || serverContact.location)) {
+      try {
+        localStorage.setItem('subeg_contact_data', JSON.stringify(serverContact));
+      } catch {}
+      return serverContact;
+    }
+  } catch {}
+
+  // 2. Try Firestore with timeout protection
+  if (db) {
     try {
-      const docSnap = await getDoc(doc(db, 'contact', 'main'));
-      if (docSnap.exists()) {
+      const docSnap = await withTimeout(getDoc(doc(db, 'contact', 'main')), 2000, null);
+      if (docSnap && docSnap.exists()) {
         const data = docSnap.data() as ContactData;
         if (data && (data.email || data.location)) {
           try {
@@ -526,17 +707,6 @@ export async function fetchContactData(): Promise<ContactData> {
     }
   }
 
-  // 2. Authoritative Server API
-  try {
-    const serverContact = await fetchFromServer<ContactData>('contact', initialContactData);
-    if (serverContact && (serverContact.email || serverContact.location)) {
-      try {
-        localStorage.setItem('subeg_contact_data', JSON.stringify(serverContact));
-      } catch {}
-      return serverContact;
-    }
-  } catch {}
-
   // 3. LocalStorage Cache
   try {
     const local = localStorage.getItem('subeg_contact_data');
@@ -546,7 +716,54 @@ export async function fetchContactData(): Promise<ContactData> {
   return initialContactData;
 }
 
-// Subscribe to Settings
+export async function saveContactApi(data: Partial<ContactData>): Promise<ContactData> {
+  let existingContact: ContactData = initialContactData;
+  try {
+    const local = localStorage.getItem('subeg_contact_data');
+    if (local) existingContact = JSON.parse(local);
+  } catch {}
+
+  const updated: ContactData = { ...existingContact, ...data };
+
+  // 1. Update LocalStorage immediately & broadcast (0ms instant reactivity)
+  try {
+    localStorage.setItem('subeg_contact_data', JSON.stringify(updated));
+    broadcastStoreUpdate('contact', updated);
+  } catch {}
+
+  // 2. Save to Server Backend
+  try {
+    await fetch('/api/contact', {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify(updated)
+    });
+  } catch (e) {
+    console.warn('Notice saving contact to server backend:', e);
+  }
+
+  // 3. Non-blocking Firestore save
+  syncToFirestoreAsync('contact', 'main', updated);
+
+  // 4. Sync siteSettings contactEmail if needed
+  if (data.email) {
+    try {
+      const localStg = localStorage.getItem('subeg_site_settings');
+      if (localStg) {
+        const parsed = JSON.parse(localStg);
+        parsed.contactEmail = data.email;
+        localStorage.setItem('subeg_site_settings', JSON.stringify(parsed));
+        broadcastStoreUpdate('settings', parsed);
+      }
+    } catch {}
+  }
+
+  return updated;
+}
+
+// ==================== SETTINGS ====================
+
 export function subscribeSiteSettings(callback: (settings: SiteSettings) => void): () => void {
   try {
     const local = localStorage.getItem('subeg_site_settings');
@@ -556,7 +773,7 @@ export function subscribeSiteSettings(callback: (settings: SiteSettings) => void
     }
   } catch {}
 
-  fetchSiteSettings().then(data => {
+  fetchSiteSettings().then((data) => {
     const jsonStr = JSON.stringify(data);
     if (jsonStr !== lastSettingsJson) {
       lastSettingsJson = jsonStr;
@@ -587,11 +804,22 @@ export function subscribeSiteSettings(callback: (settings: SiteSettings) => void
 }
 
 export async function fetchSiteSettings(): Promise<SiteSettings> {
-  // 1. Try Firestore First
-  if (db && isFirestoreAvailable) {
+  // 1. Try Server API first
+  try {
+    const serverSettings = await fetchFromServer<SiteSettings>('settings', initialSiteSettings);
+    if (serverSettings && serverSettings.siteTitle) {
+      try {
+        localStorage.setItem('subeg_site_settings', JSON.stringify(serverSettings));
+      } catch {}
+      return serverSettings;
+    }
+  } catch {}
+
+  // 2. Try Firestore with timeout protection
+  if (db) {
     try {
-      const docSnap = await getDoc(doc(db, 'settings', 'main'));
-      if (docSnap.exists()) {
+      const docSnap = await withTimeout(getDoc(doc(db, 'settings', 'main')), 2000, null);
+      if (docSnap && docSnap.exists()) {
         const data = docSnap.data() as SiteSettings;
         if (data && data.siteTitle) {
           try {
@@ -605,17 +833,6 @@ export async function fetchSiteSettings(): Promise<SiteSettings> {
     }
   }
 
-  // 2. Authoritative Server API
-  try {
-    const serverSettings = await fetchFromServer<SiteSettings>('settings', initialSiteSettings);
-    if (serverSettings && serverSettings.siteTitle) {
-      try {
-        localStorage.setItem('subeg_site_settings', JSON.stringify(serverSettings));
-      } catch {}
-      return serverSettings;
-    }
-  } catch {}
-
   // 3. LocalStorage Cache
   try {
     const local = localStorage.getItem('subeg_site_settings');
@@ -623,279 +840,6 @@ export async function fetchSiteSettings(): Promise<SiteSettings> {
   } catch {}
 
   return initialSiteSettings;
-}
-
-// Admin Auth
-export async function checkAdminAuth(): Promise<boolean> {
-  const token = getAdminToken();
-  if (token && token.length > 0) return true;
-  try {
-    const res = await fetch('/api/admin/me', { headers: getAuthHeaders() });
-    if (res.ok) {
-      const data = await res.json();
-      return Boolean(data.authenticated);
-    }
-  } catch {}
-  return false;
-}
-
-export async function adminLogin(password: string): Promise<{ success: boolean; token?: string; error?: string }> {
-  if (password === 'subeg2026') {
-    const token = DEFAULT_ADMIN_TOKEN;
-    setAdminToken(token);
-
-    // Also notify server backend
-    try {
-      await fetch('/api/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password })
-      });
-    } catch {}
-
-    return { success: true, token };
-  } else {
-    return { success: false, error: 'Invalid password' };
-  }
-}
-
-export async function adminLogout(): Promise<void> {
-  setAdminToken('');
-  try {
-    await fetch('/api/admin/logout', { method: 'POST' });
-  } catch {}
-}
-
-// Save or Update Project with Multi-Tier Storage (Firestore + Server API + LocalStorage)
-export async function saveProjectApi(project: Partial<Project>): Promise<Project> {
-  const id = project.id || `proj_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-  const fullProject: Project = {
-    id,
-    title: project.title || 'Untitled Project',
-    slug: project.slug || id,
-    category: project.category || 'PROJECTION DESIGN',
-    year: project.year || new Date().getFullYear().toString(),
-    role: project.role || 'Projection Designer',
-    medium: project.medium || '',
-    shortDescription: project.shortDescription || '',
-    longDescription: project.longDescription || '',
-    heroMedia: project.heroMedia || '',
-    hoverMedia: project.hoverMedia || '',
-    videoStreamUrl: project.videoStreamUrl || '',
-    enableStreaming: Boolean(project.enableStreaming),
-    gallery: project.gallery || [],
-    videos: project.videos || [],
-    tools: project.tools || [],
-    credits: project.credits || [],
-    featured: Boolean(project.featured),
-    published: project.published ?? true,
-    sortOrder: project.sortOrder ?? 0,
-    createdAt: project.createdAt || new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-
-  // 1. Immediately update Local Storage cache and broadcast
-  try {
-    const existingList: Project[] = JSON.parse(localStorage.getItem('subeg_projects_data') || '[]');
-    const idx = existingList.findIndex(p => p.id === id);
-    if (idx !== -1) {
-      existingList[idx] = fullProject;
-    } else {
-      existingList.unshift(fullProject);
-    }
-    localStorage.setItem('subeg_projects_data', JSON.stringify(existingList));
-    broadcastStoreUpdate('projects', existingList);
-  } catch {}
-
-  // 2. Persist to Firestore
-  if (db && isFirestoreAvailable) {
-    try {
-      const docRef = doc(db, 'projects', id);
-      await setDoc(docRef, fullProject, { merge: true });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `projects/${id}`);
-    }
-  }
-
-  // 3. Persist to Express Server Backend
-  try {
-    const isEdit = Boolean(project.id);
-    const url = isEdit ? `/api/projects/${id}` : '/api/projects';
-    const method = isEdit ? 'PUT' : 'POST';
-    await fetch(url, {
-      method,
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-      body: JSON.stringify(fullProject)
-    });
-  } catch (e) {
-    console.warn('Server API save project notice:', e);
-  }
-
-  return fullProject;
-}
-
-export async function deleteProjectApi(id: string): Promise<void> {
-  // 1. Delete from LocalStorage immediately & broadcast
-  try {
-    const existingList: Project[] = JSON.parse(localStorage.getItem('subeg_projects_data') || '[]');
-    const filtered = existingList.filter(p => p.id !== id);
-    localStorage.setItem('subeg_projects_data', JSON.stringify(filtered));
-    broadcastStoreUpdate('projects', filtered);
-  } catch {}
-
-  // 2. Delete from Firestore
-  if (db && isFirestoreAvailable) {
-    try {
-      await deleteDoc(doc(db, 'projects', id));
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `projects/${id}`);
-    }
-  }
-
-  // 3. Delete from Server
-  try {
-    await fetch(`/api/projects/${id}`, {
-      method: 'DELETE',
-      credentials: 'include',
-      headers: getAuthHeaders()
-    });
-  } catch {}
-}
-
-export async function reorderProjectsApi(projectIds: string[]): Promise<void> {
-  // 1. Update local & broadcast
-  try {
-    const existingList: Project[] = JSON.parse(localStorage.getItem('subeg_projects_data') || '[]');
-    const projectMap = new Map(existingList.map(p => [p.id, p]));
-    const reordered: Project[] = [];
-    projectIds.forEach((id, idx) => {
-      const p = projectMap.get(id);
-      if (p) reordered.push({ ...p, sortOrder: idx });
-    });
-    existingList.forEach(p => {
-      if (!projectIds.includes(p.id)) reordered.push(p);
-    });
-    localStorage.setItem('subeg_projects_data', JSON.stringify(reordered));
-    broadcastStoreUpdate('projects', reordered);
-  } catch {}
-
-  // 2. Firestore batch update
-  if (db && isFirestoreAvailable) {
-    try {
-      const batch = writeBatch(db);
-      projectIds.forEach((id, index) => {
-        const docRef = doc(db, 'projects', id);
-        batch.update(docRef, { sortOrder: index });
-      });
-      await batch.commit();
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, 'projects');
-    }
-  }
-
-  // 3. Server reorder
-  try {
-    await fetch('/api/projects/reorder', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-      body: JSON.stringify({ projectIds })
-    });
-  } catch {}
-}
-
-export async function saveAboutApi(data: Partial<AboutData>): Promise<AboutData> {
-  let existingAbout: AboutData = initialAboutData;
-  try {
-    const local = localStorage.getItem('subeg_about_data');
-    if (local) existingAbout = JSON.parse(local);
-  } catch {}
-
-  const updated: AboutData = { ...existingAbout, ...data };
-
-  // 1. Update LocalStorage immediately & broadcast
-  try {
-    localStorage.setItem('subeg_about_data', JSON.stringify(updated));
-    broadcastStoreUpdate('about', updated);
-  } catch {}
-
-  // 2. Save to Firestore
-  if (db && isFirestoreAvailable) {
-    try {
-      const docRef = doc(db, 'about', 'main');
-      await setDoc(docRef, updated, { merge: true });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'about/main');
-    }
-  }
-
-  // 3. Save to Server Backend
-  try {
-    await fetch('/api/about', {
-      method: 'PUT',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-      body: JSON.stringify(updated)
-    });
-  } catch (e) {
-    console.warn('Server API about save notice:', e);
-  }
-
-  return updated;
-}
-
-export async function saveContactApi(data: Partial<ContactData>): Promise<ContactData> {
-  let existingContact: ContactData = initialContactData;
-  try {
-    const local = localStorage.getItem('subeg_contact_data');
-    if (local) existingContact = JSON.parse(local);
-  } catch {}
-
-  const updated: ContactData = { ...existingContact, ...data };
-
-  // 1. Update LocalStorage immediately & broadcast
-  try {
-    localStorage.setItem('subeg_contact_data', JSON.stringify(updated));
-    broadcastStoreUpdate('contact', updated);
-  } catch {}
-
-  // 2. Save to Firestore
-  if (db && isFirestoreAvailable) {
-    try {
-      const docRef = doc(db, 'contact', 'main');
-      await setDoc(docRef, updated, { merge: true });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'contact/main');
-    }
-  }
-
-  // 3. Save to Server Backend
-  try {
-    await fetch('/api/contact', {
-      method: 'PUT',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-      body: JSON.stringify(updated)
-    });
-  } catch (e) {
-    console.warn('Server API contact save notice:', e);
-  }
-
-  // 4. Keep siteSettings in sync if email changed
-  if (data.email) {
-    try {
-      const localStg = localStorage.getItem('subeg_site_settings');
-      if (localStg) {
-        const parsed = JSON.parse(localStg);
-        parsed.contactEmail = data.email;
-        localStorage.setItem('subeg_site_settings', JSON.stringify(parsed));
-        broadcastStoreUpdate('settings', parsed);
-      }
-    } catch {}
-  }
-
-  return updated;
 }
 
 export async function saveSettingsApi(data: Partial<SiteSettings>): Promise<SiteSettings> {
@@ -907,23 +851,13 @@ export async function saveSettingsApi(data: Partial<SiteSettings>): Promise<Site
 
   const updated: SiteSettings = { ...existingSettings, ...data };
 
-  // 1. Update LocalStorage immediately & broadcast
+  // 1. Update LocalStorage immediately & broadcast (0ms instant reactivity)
   try {
     localStorage.setItem('subeg_site_settings', JSON.stringify(updated));
     broadcastStoreUpdate('settings', updated);
   } catch {}
 
-  // 2. Save to Firestore
-  if (db && isFirestoreAvailable) {
-    try {
-      const docRef = doc(db, 'settings', 'main');
-      await setDoc(docRef, updated, { merge: true });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'settings/main');
-    }
-  }
-
-  // 3. Save to Server Backend
+  // 2. Save to Server Backend
   try {
     await fetch('/api/settings', {
       method: 'PUT',
@@ -932,8 +866,11 @@ export async function saveSettingsApi(data: Partial<SiteSettings>): Promise<Site
       body: JSON.stringify(updated)
     });
   } catch (e) {
-    console.warn('Server API settings save notice:', e);
+    console.warn('Notice saving settings to server backend:', e);
   }
+
+  // 3. Non-blocking Firestore save
+  syncToFirestoreAsync('settings', 'main', updated);
 
   // 4. Keep contact email in sync if contactEmail changed
   if (data.contactEmail) {
@@ -951,8 +888,10 @@ export async function saveSettingsApi(data: Partial<SiteSettings>): Promise<Site
   return updated;
 }
 
+// ==================== MEDIA ====================
+
 export async function fetchMediaApi(): Promise<MediaItem[]> {
-  // 1. Try Server API first (direct uploads directory)
+  // 1. Try Server API first
   try {
     const serverMedia = await fetchFromServer<MediaItem[]>('media', []);
     if (serverMedia && serverMedia.length > 0) {
@@ -963,13 +902,13 @@ export async function fetchMediaApi(): Promise<MediaItem[]> {
     }
   } catch {}
 
-  // 2. Try Firestore if available
-  if (db && isFirestoreAvailable) {
+  // 2. Try Firestore with timeout protection
+  if (db) {
     try {
-      const querySnapshot = await getDocs(collection(db, 'media'));
-      if (!querySnapshot.empty) {
+      const querySnapshot = await withTimeout(getDocs(collection(db, 'media')), 2000, null);
+      if (querySnapshot && !querySnapshot.empty) {
         const mediaItems: MediaItem[] = querySnapshot.docs.map(
-          d => ({ id: d.id, ...d.data() } as MediaItem)
+          (d) => ({ id: d.id, ...d.data() } as MediaItem)
         );
         mediaItems.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
         try {
@@ -990,7 +929,7 @@ export async function fetchMediaApi(): Promise<MediaItem[]> {
 export async function uploadMediaApi(file: File): Promise<MediaItem> {
   const dataUrl = await fileToDataUrl(file);
   const mediaId = `media_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-  
+
   let finalUrl = dataUrl;
 
   // 1. Upload to Server disk storage
@@ -1010,7 +949,7 @@ export async function uploadMediaApi(file: File): Promise<MediaItem> {
       }
     }
   } catch (e) {
-    console.warn('Server upload notice, using optimized client media payload:', e);
+    console.warn('Notice on server media upload:', e);
   }
 
   const mediaItem: MediaItem = {
@@ -1023,7 +962,7 @@ export async function uploadMediaApi(file: File): Promise<MediaItem> {
     size: file.size
   };
 
-  // 2. LocalStorage cache
+  // 2. LocalStorage cache & broadcast
   try {
     const existing: MediaItem[] = JSON.parse(localStorage.getItem('subeg_media_items') || '[]');
     existing.unshift(mediaItem);
@@ -1032,14 +971,8 @@ export async function uploadMediaApi(file: File): Promise<MediaItem> {
     broadcastStoreUpdate('media', existing);
   } catch {}
 
-  // 3. Firestore save if available
-  if (db && isFirestoreAvailable) {
-    try {
-      await setDoc(doc(db, 'media', mediaId), mediaItem);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `media/${mediaId}`);
-    }
-  }
+  // 3. Non-blocking Firestore save
+  syncToFirestoreAsync('media', mediaId, mediaItem);
 
   return mediaItem;
 }
@@ -1057,18 +990,14 @@ export async function deleteMediaApi(filenameOrId: string): Promise<void> {
   // Delete from LocalStorage
   try {
     const existing: MediaItem[] = JSON.parse(localStorage.getItem('subeg_media_items') || '[]');
-    const filtered = existing.filter(m => m.id !== filenameOrId && m.filename !== filenameOrId);
+    const filtered = existing.filter((m) => m.id !== filenameOrId && m.filename !== filenameOrId);
     localStorage.setItem('subeg_media_items', JSON.stringify(filtered));
     broadcastStoreUpdate('media', filtered);
   } catch {}
 
-  // Delete from Firestore
-  if (db && isFirestoreAvailable) {
-    try {
-      await deleteDoc(doc(db, 'media', filenameOrId));
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `media/${filenameOrId}`);
-    }
+  // Non-blocking Firestore delete
+  if (db) {
+    withTimeout(deleteDoc(doc(db, 'media', filenameOrId)), 2000, null).catch(() => {});
   }
 }
 
@@ -1100,6 +1029,49 @@ export async function uploadCvApi(file: File): Promise<{ cvUrl: string }> {
     throw new Error('Failed to upload CV file');
   }
 }
+
+// ==================== AUTH ====================
+
+export async function checkAdminAuth(): Promise<boolean> {
+  const token = getAdminToken();
+  if (token && token.length > 0) return true;
+  try {
+    const res = await fetch('/api/admin/me', { headers: getAuthHeaders() });
+    if (res.ok) {
+      const data = await res.json();
+      return Boolean(data.authenticated);
+    }
+  } catch {}
+  return false;
+}
+
+export async function adminLogin(password: string): Promise<{ success: boolean; token?: string; error?: string }> {
+  if (password === 'subeg2026') {
+    const token = DEFAULT_ADMIN_TOKEN;
+    setAdminToken(token);
+
+    try {
+      await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+    } catch {}
+
+    return { success: true, token };
+  } else {
+    return { success: false, error: 'Invalid password' };
+  }
+}
+
+export async function adminLogout(): Promise<void> {
+  setAdminToken('');
+  try {
+    await fetch('/api/admin/logout', { method: 'POST' });
+  } catch {}
+}
+
+// ==================== BACKUP & RESTORE ====================
 
 export async function exportFullBackup(): Promise<string> {
   const [projects, about, contact, settings, media] = await Promise.all([
@@ -1145,7 +1117,6 @@ export async function importFullBackup(jsonContent: string): Promise<boolean> {
       await saveSettingsApi(store.settings);
     }
 
-    // Also push to server backup endpoint
     try {
       await fetch('/api/backup/restore', {
         method: 'POST',
@@ -1172,8 +1143,8 @@ export async function resetDemoDataApi(): Promise<void> {
     });
   } catch {}
 
-  // Firestore reset
-  if (db && isFirestoreAvailable) {
+  // Non-blocking Firestore reset
+  if (db) {
     try {
       const batch = writeBatch(db);
       initialProjects.forEach((proj, idx) => {
@@ -1183,10 +1154,8 @@ export async function resetDemoDataApi(): Promise<void> {
       batch.set(doc(db, 'about', 'main'), initialAboutData);
       batch.set(doc(db, 'contact', 'main'), initialContactData);
       batch.set(doc(db, 'settings', 'main'), initialSiteSettings);
-      await batch.commit();
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'reset-demo');
-    }
+      withTimeout(batch.commit(), 2500, null).catch(() => {});
+    } catch {}
   }
 
   localStorage.removeItem('subeg_projects_data');
