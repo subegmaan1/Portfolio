@@ -2,7 +2,22 @@ import React, { useState } from 'react';
 import { Project, ProjectCategory } from '../types';
 import { saveProjectApi, uploadMediaApi } from '../lib/api';
 import { parseVideoUrl } from '../lib/videoUtils';
-import { ArrowLeft, Save, Upload, Plus, Trash2, Video, Play, ExternalLink } from 'lucide-react';
+import {
+  ArrowLeft,
+  Save,
+  Upload,
+  Plus,
+  Trash2,
+  Video,
+  Play,
+  GripVertical,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Star,
+  ArrowUpDown
+} from 'lucide-react';
 
 interface AdminProjectFormProps {
   initialProject: Partial<Project> | null;
@@ -43,6 +58,10 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // Drag-and-drop state for gallery items
+  const [draggedGalleryIdx, setDraggedGalleryIdx] = useState<number | null>(null);
+  const [dragOverGalleryIdx, setDragOverGalleryIdx] = useState<number | null>(null);
 
   // Generate slug from title automatically if empty
   const handleTitleChange = (val: string) => {
@@ -103,8 +122,60 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
     setGallery(prev => [...prev, '']);
   };
 
-  const addVideoUrl = () => {
-    setVideos(prev => [...prev, '']);
+  // Reorder Gallery Helper Functions
+  const moveGalleryItem = (fromIndex: number, toIndex: number) => {
+    if (toIndex < 0 || toIndex >= gallery.length) return;
+    setGallery(prev => {
+      const next = [...prev];
+      const [item] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, item);
+      return next;
+    });
+  };
+
+  const moveGalleryToExtreme = (fromIndex: number, position: 'FIRST' | 'LAST') => {
+    setGallery(prev => {
+      const next = [...prev];
+      const [item] = next.splice(fromIndex, 1);
+      if (position === 'FIRST') {
+        next.unshift(item);
+      } else {
+        next.push(item);
+      }
+      return next;
+    });
+  };
+
+  // Drag and drop handlers for gallery cards
+  const handleGalleryDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedGalleryIdx(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', index.toString());
+  };
+
+  const handleGalleryDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverGalleryIdx !== index) {
+      setDragOverGalleryIdx(index);
+    }
+  };
+
+  const handleGalleryDragEnd = () => {
+    setDraggedGalleryIdx(null);
+    setDragOverGalleryIdx(null);
+  };
+
+  const handleGalleryDrop = (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    if (draggedGalleryIdx === null || draggedGalleryIdx === targetIndex) {
+      setDraggedGalleryIdx(null);
+      setDragOverGalleryIdx(null);
+      return;
+    }
+    moveGalleryItem(draggedGalleryIdx, targetIndex);
+    setDraggedGalleryIdx(null);
+    setDragOverGalleryIdx(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -516,12 +587,15 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
           </div>
         </div>
 
-        {/* Gallery Documentation Images */}
+        {/* Gallery Documentation Images with Drag & Drop Resequencing */}
         <div className="bg-neutral-900/60 p-6 border border-neutral-800 space-y-6">
           <div className="space-y-3">
             <div className="flex flex-wrap justify-between items-center gap-3">
               <div className="flex items-center space-x-3">
-                <label className="text-neutral-200 font-bold uppercase text-xs">Documentation Gallery Images</label>
+                <label className="text-neutral-200 font-bold uppercase text-xs flex items-center space-x-2">
+                  <ArrowUpDown className="w-3.5 h-3.5 text-teal-400" />
+                  <span>Documentation Gallery Images</span>
+                </label>
                 <span className="px-2 py-0.5 bg-neutral-800 border border-neutral-700 text-teal-400 text-[10px] font-mono">
                   {gallery.filter(Boolean).length} {gallery.filter(Boolean).length === 1 ? 'image' : 'images'}
                 </span>
@@ -548,112 +622,168 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
               </div>
             </div>
 
+            <p className="text-[11px] text-neutral-400 font-mono">
+              Drag images by the handle to reorder the carousel sequence, or use the navigation buttons below each image.
+            </p>
+
             {gallery.length === 0 ? (
               <div className="p-8 border border-dashed border-neutral-800 text-center font-mono text-xs text-neutral-500 space-y-2">
                 <p>No gallery images added yet.</p>
                 <p className="text-[11px] text-neutral-600">Click &quot;+ Upload Photos&quot; to select one or multiple images for the project carousel.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {gallery.map((url, idx) => (
-                  <div key={idx} className="bg-neutral-950 p-2.5 border border-neutral-800 space-y-2 group">
-                    <div className="aspect-video relative overflow-hidden bg-neutral-900 border border-neutral-800/80">
-                      {url ? (
-                        <img
-                          src={url}
-                          alt=""
-                          className="w-full h-full object-cover"
-                          onError={e => {
-                            (e.currentTarget as HTMLElement).style.display = 'none';
-                            const fallback = e.currentTarget.nextElementSibling as HTMLElement;
-                            if (fallback) fallback.style.display = 'flex';
-                          }}
-                        />
-                      ) : null}
-                      <div
-                        style={{ display: url ? 'none' : 'flex' }}
-                        className="w-full h-full flex flex-col items-center justify-center text-neutral-500 font-mono text-[10px] p-2 text-center bg-neutral-900"
-                      >
-                        {url.startsWith('/uploads/') ? (
-                          <span className="text-amber-400">Broken local path. Please re-upload photo.</span>
-                        ) : (
-                          <span>{url ? 'Failed to load image' : 'Enter image URL below'}</span>
-                        )}
-                      </div>
-                      <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-neutral-950/80 font-mono text-[9px] text-neutral-400 border border-white/10">
-                        #{idx + 1}
-                      </span>
-                    </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
+                {gallery.map((url, idx) => {
+                  const isDragging = draggedGalleryIdx === idx;
+                  const isOver = dragOverGalleryIdx === idx;
 
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="text"
-                        value={url}
-                        placeholder="Image URL or data URI..."
-                        onChange={e => {
-                          const next = [...gallery];
-                          next[idx] = e.target.value;
-                          setGallery(next);
-                        }}
-                        className="flex-1 px-2 py-1.5 bg-neutral-900 border border-neutral-800 text-xs text-neutral-200 focus:outline-none focus:border-teal-500"
-                        autoFocus={url === ''}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setGallery(prev => prev.filter((_, i) => i !== idx))}
-                        className="p-1.5 text-neutral-500 hover:text-red-400 transition-colors"
-                        title="Remove Image"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                    {url && (
-                      <div className="flex justify-between items-center pt-1 border-t border-neutral-900 font-mono text-[10px]">
-                        <button
-                          type="button"
-                          onClick={() => setHeroMedia(url)}
-                          className="text-neutral-500 hover:text-teal-400"
-                          title="Use this image as Hero Media"
-                        >
-                          {heroMedia === url ? '★ Hero Media' : 'Set as Hero'}
-                        </button>
-                        <div className="flex space-x-2">
-                          {idx > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const next = [...gallery];
-                                const temp = next[idx - 1];
-                                next[idx - 1] = next[idx];
-                                next[idx] = temp;
-                                setGallery(next);
-                              }}
-                              className="text-neutral-500 hover:text-neutral-300"
-                            >
-                              &larr; Prev
-                            </button>
+                  return (
+                    <div
+                      key={idx}
+                      draggable
+                      onDragStart={e => handleGalleryDragStart(e, idx)}
+                      onDragOver={e => handleGalleryDragOver(e, idx)}
+                      onDragEnd={handleGalleryDragEnd}
+                      onDrop={e => handleGalleryDrop(e, idx)}
+                      className={`bg-neutral-950 p-2.5 border space-y-2.5 transition-all relative ${
+                        isDragging
+                          ? 'opacity-30 border-dashed border-teal-500 scale-95'
+                          : isOver
+                          ? 'border-teal-400 ring-2 ring-teal-500/40 bg-neutral-900'
+                          : 'border-neutral-800 hover:border-neutral-700'
+                      }`}
+                    >
+                      {/* Top Bar with Sequence Number & Drag Handle */}
+                      <div className="flex items-center justify-between border-b border-neutral-900 pb-1.5 font-mono text-[10px]">
+                        <div className="flex items-center space-x-1.5">
+                          <span
+                            className="cursor-grab active:cursor-grabbing p-0.5 text-neutral-500 hover:text-teal-400"
+                            title="Drag to resequence image order"
+                          >
+                            <GripVertical className="w-3.5 h-3.5" />
+                          </span>
+                          <span className="px-1.5 py-0.5 bg-neutral-900 border border-neutral-800 font-bold text-neutral-300">
+                            #{idx + 1}
+                          </span>
+                          {heroMedia === url && url.trim() !== '' && (
+                            <span className="px-1.5 py-0.5 bg-amber-950 border border-amber-800/80 text-amber-300 text-[9px] flex items-center space-x-1">
+                              <Star className="w-2.5 h-2.5 fill-current" />
+                              <span>Hero</span>
+                            </span>
                           )}
-                          {idx < gallery.length - 1 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const next = [...gallery];
-                                const temp = next[idx + 1];
-                                next[idx + 1] = next[idx];
-                                next[idx] = temp;
-                                setGallery(next);
-                              }}
-                              className="text-neutral-500 hover:text-neutral-300"
-                            >
-                              Next &rarr;
-                            </button>
+                        </div>
+
+                        <div className="flex items-center space-x-1">
+                          <button
+                            type="button"
+                            onClick={() => moveGalleryToExtreme(idx, 'FIRST')}
+                            disabled={idx === 0}
+                            className="p-1 text-neutral-500 hover:text-neutral-200 disabled:opacity-20"
+                            title="Move to First Position"
+                          >
+                            <ChevronsLeft className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveGalleryItem(idx, idx - 1)}
+                            disabled={idx === 0}
+                            className="p-1 text-neutral-500 hover:text-neutral-200 disabled:opacity-20"
+                            title="Move Left / Earlier"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveGalleryItem(idx, idx + 1)}
+                            disabled={idx === gallery.length - 1}
+                            className="p-1 text-neutral-500 hover:text-neutral-200 disabled:opacity-20"
+                            title="Move Right / Later"
+                          >
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveGalleryToExtreme(idx, 'LAST')}
+                            disabled={idx === gallery.length - 1}
+                            className="p-1 text-neutral-500 hover:text-neutral-200 disabled:opacity-20"
+                            title="Move to Last Position"
+                          >
+                            <ChevronsRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Image Preview Thumbnail */}
+                      <div className="aspect-video relative overflow-hidden bg-neutral-900 border border-neutral-800/80">
+                        {url ? (
+                          <img
+                            src={url}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            onError={e => {
+                              (e.currentTarget as HTMLElement).style.display = 'none';
+                              const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                              if (fallback) fallback.style.display = 'flex';
+                            }}
+                          />
+                        ) : null}
+                        <div
+                          style={{ display: url ? 'none' : 'flex' }}
+                          className="w-full h-full flex flex-col items-center justify-center text-neutral-500 font-mono text-[10px] p-2 text-center bg-neutral-900"
+                        >
+                          {url.startsWith('/uploads/') ? (
+                            <span className="text-amber-400">Broken local path. Please re-upload photo.</span>
+                          ) : (
+                            <span>{url ? 'Failed to load image' : 'Enter image URL below'}</span>
                           )}
                         </div>
                       </div>
-                    )}
-                  </div>
-                ))}
+
+                      {/* URL input and Delete */}
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="text"
+                          value={url}
+                          placeholder="Image URL or data URI..."
+                          onChange={e => {
+                            const next = [...gallery];
+                            next[idx] = e.target.value;
+                            setGallery(next);
+                          }}
+                          className="flex-1 px-2 py-1.5 bg-neutral-900 border border-neutral-800 text-xs text-neutral-200 focus:outline-none focus:border-teal-500 font-mono"
+                          autoFocus={url === ''}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setGallery(prev => prev.filter((_, i) => i !== idx))}
+                          className="p-1.5 text-neutral-500 hover:text-red-400 transition-colors"
+                          title="Remove Image"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {/* Set as Hero Button */}
+                      {url && (
+                        <div className="flex justify-between items-center pt-1 border-t border-neutral-900 font-mono text-[10px]">
+                          <button
+                            type="button"
+                            onClick={() => setHeroMedia(url)}
+                            className={`flex items-center space-x-1 transition-colors ${
+                              heroMedia === url
+                                ? 'text-amber-400 font-bold'
+                                : 'text-neutral-500 hover:text-teal-400'
+                            }`}
+                            title="Set this image as Project Hero Media"
+                          >
+                            <Star className={`w-3 h-3 ${heroMedia === url ? 'fill-current' : ''}`} />
+                            <span>{heroMedia === url ? 'Hero Media Active' : 'Set as Hero'}</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -703,3 +833,4 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
     </div>
   );
 };
+
