@@ -51,20 +51,33 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
       className="fixed inset-0 z-50 overflow-y-auto bg-neutral-950/95 backdrop-blur-xl text-neutral-100"
     >
       {/* Fixed Header Bar */}
-      <div className="sticky top-0 z-50 bg-neutral-950/80 backdrop-blur-md border-b border-neutral-800/80 px-6 lg:px-12 h-20 flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <span className="font-mono text-xs text-neutral-400 uppercase tracking-wider">
-            {project.category}
-          </span>
-          <span className="text-neutral-600">&bull;</span>
-          <span className="font-mono text-xs text-neutral-300 font-semibold uppercase">
-            {project.year}
-          </span>
-        </div>
+      <div className="sticky top-0 z-50 bg-neutral-950/90 backdrop-blur-md border-b border-neutral-800/80 px-4 sm:px-6 lg:px-12 h-16 sm:h-20 flex items-center justify-between">
+        {/* Top Left: Clickable Return / Back to previous window */}
+        <button
+          onClick={onClose}
+          className="group flex items-center space-x-2.5 px-3 py-2 -ml-2 rounded-md bg-neutral-900/60 hover:bg-neutral-900 border border-neutral-800/80 hover:border-neutral-700 transition-all text-neutral-300 hover:text-white cursor-pointer active:scale-95"
+          title="Return to Projects / Back"
+          id="back-to-projects-btn"
+        >
+          <ArrowLeft className="w-4 h-4 text-teal-400 group-hover:-translate-x-1 transition-transform" />
+          <div className="flex items-center space-x-2">
+            <span className="font-mono text-xs font-bold uppercase tracking-wider text-neutral-100 group-hover:text-teal-300 transition-colors">
+              Back to Projects
+            </span>
+            <span className="text-neutral-600 hidden sm:inline">&bull;</span>
+            <span className="font-mono text-xs text-neutral-400 uppercase tracking-wider hidden sm:inline">
+              {project.category}
+            </span>
+            <span className="text-neutral-600 hidden md:inline">&bull;</span>
+            <span className="font-mono text-xs text-neutral-400 font-medium uppercase hidden md:inline">
+              {project.year}
+            </span>
+          </div>
+        </button>
 
         <button
           onClick={onClose}
-          className="p-2.5 rounded-full border border-neutral-800 text-neutral-300 hover:text-white hover:bg-neutral-800 transition-all"
+          className="p-2 sm:p-2.5 rounded-full border border-neutral-800 bg-neutral-900/50 text-neutral-300 hover:text-white hover:bg-neutral-800 transition-all cursor-pointer active:scale-95"
           title="Close Case Study (Esc)"
           id="close-project-modal-btn"
         >
