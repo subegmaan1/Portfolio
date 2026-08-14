@@ -5,7 +5,7 @@ import { Save, RefreshCw, Key, Trash2, Sparkles, CheckCircle } from 'lucide-reac
 
 interface AdminSettingsProps {
   settings: SiteSettings;
-  onRefreshSettings: () => void;
+  onRefreshSettings: (newSettings?: SiteSettings) => void;
   onRefreshAllData: () => void;
 }
 
@@ -14,9 +14,10 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
   onRefreshSettings,
   onRefreshAllData
 }) => {
-  const [siteTitle, setSiteTitle] = useState(settings.siteTitle || '');
-  const [siteDescription, setSiteDescription] = useState(settings.siteDescription || '');
-  const [contactEmail, setContactEmail] = useState(settings.contactEmail || '');
+  const [siteTitle, setSiteTitle] = useState(settings?.siteTitle || '');
+  const [siteDescription, setSiteDescription] = useState(settings?.siteDescription || '');
+  const [contactEmail, setContactEmail] = useState(settings?.contactEmail || '');
+  const [isDirty, setIsDirty] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -24,12 +25,12 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
   const [message, setMessage] = useState('');
 
   useEffect(() => {
-    if (settings) {
+    if (settings && !isDirty) {
       setSiteTitle(settings.siteTitle || '');
       setSiteDescription(settings.siteDescription || '');
       setContactEmail(settings.contactEmail || '');
     }
-  }, [settings]);
+  }, [settings, isDirty]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,13 +38,14 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
     setMessage('');
 
     try {
-      await saveSettingsApi({
+      const saved = await saveSettingsApi({
         siteTitle,
         siteDescription,
         contactEmail
       });
+      setIsDirty(false);
       setMessage('Site settings updated successfully!');
-      onRefreshSettings();
+      onRefreshSettings(saved);
       setTimeout(() => setMessage(''), 4000);
     } catch {
       setMessage('Settings updated in local and cloud stores.');
@@ -127,7 +129,10 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
             <input
               type="text"
               value={siteTitle}
-              onChange={e => setSiteTitle(e.target.value)}
+              onChange={e => {
+                setSiteTitle(e.target.value);
+                setIsDirty(true);
+              }}
               className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100"
             />
           </div>
@@ -136,7 +141,10 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
             <label className="block text-neutral-400 uppercase mb-2">Site SEO Description</label>
             <textarea
               value={siteDescription}
-              onChange={e => setSiteDescription(e.target.value)}
+              onChange={e => {
+                setSiteDescription(e.target.value);
+                setIsDirty(true);
+              }}
               rows={2}
               className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100"
             />

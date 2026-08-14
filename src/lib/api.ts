@@ -282,46 +282,70 @@ export async function fetchProjectByIdOrSlug(idOrSlug: string): Promise<Project>
 
 // Subscribe to About data real-time
 export function subscribeAboutData(callback: (about: AboutData) => void): () => void {
-  if (!db) {
+  const loadFallback = () => {
     try {
       const local = localStorage.getItem('subeg_about_data');
-      callback(local ? JSON.parse(local) : initialAboutData);
-    } catch {
-      callback(initialAboutData);
-    }
+      if (local) {
+        const parsed = JSON.parse(local);
+        callback({
+          ...initialAboutData,
+          ...parsed,
+          capabilities: Array.isArray(parsed.capabilities) ? parsed.capabilities : initialAboutData.capabilities
+        });
+        return;
+      }
+    } catch {}
+    callback(initialAboutData);
+  };
+
+  if (!db) {
+    loadFallback();
     return () => {};
   }
+
   try {
     const docRef = doc(db, 'about', 'main');
     return onSnapshot(
       docRef,
       async docSnap => {
         if (!docSnap.exists()) {
+          try {
+            const local = localStorage.getItem('subeg_about_data');
+            if (local) {
+              const parsed = JSON.parse(local);
+              const data: AboutData = {
+                ...initialAboutData,
+                ...parsed,
+                capabilities: Array.isArray(parsed.capabilities) ? parsed.capabilities : initialAboutData.capabilities
+              };
+              callback(data);
+              setDoc(docRef, data, { merge: true }).catch(() => {});
+              return;
+            }
+          } catch {}
           callback(initialAboutData);
+          setDoc(docRef, initialAboutData, { merge: true }).catch(() => {});
           return;
         }
-        const data = docSnap.data() as AboutData;
+
+        const raw = docSnap.data() as AboutData;
+        const data: AboutData = {
+          ...initialAboutData,
+          ...raw,
+          capabilities: Array.isArray(raw.capabilities) ? raw.capabilities : initialAboutData.capabilities
+        };
         try {
           localStorage.setItem('subeg_about_data', JSON.stringify(data));
         } catch {}
         callback(data);
       },
-      () => {
-        try {
-          const local = localStorage.getItem('subeg_about_data');
-          callback(local ? JSON.parse(local) : initialAboutData);
-        } catch {
-          callback(initialAboutData);
-        }
+      error => {
+        console.warn('Firestore subscribe about notice:', error);
+        loadFallback();
       }
     );
   } catch {
-    try {
-      const local = localStorage.getItem('subeg_about_data');
-      callback(local ? JSON.parse(local) : initialAboutData);
-    } catch {
-      callback(initialAboutData);
-    }
+    loadFallback();
     return () => {};
   }
 }
@@ -332,7 +356,12 @@ export async function fetchAboutData(): Promise<AboutData> {
       const docRef = doc(db, 'about', 'main');
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        const data = docSnap.data() as AboutData;
+        const raw = docSnap.data() as AboutData;
+        const data: AboutData = {
+          ...initialAboutData,
+          ...raw,
+          capabilities: Array.isArray(raw.capabilities) ? raw.capabilities : initialAboutData.capabilities
+        };
         try {
           localStorage.setItem('subeg_about_data', JSON.stringify(data));
         } catch {}
@@ -344,55 +373,104 @@ export async function fetchAboutData(): Promise<AboutData> {
   }
 
   try {
+    const res = await fetch('/api/about');
+    if (res.ok) {
+      const serverData = await res.json();
+      if (serverData && typeof serverData === 'object') {
+        const data: AboutData = {
+          ...initialAboutData,
+          ...serverData,
+          capabilities: Array.isArray(serverData.capabilities) ? serverData.capabilities : initialAboutData.capabilities
+        };
+        try {
+          localStorage.setItem('subeg_about_data', JSON.stringify(data));
+        } catch {}
+        return data;
+      }
+    }
+  } catch {}
+
+  try {
     const local = localStorage.getItem('subeg_about_data');
-    return local ? JSON.parse(local) : initialAboutData;
-  } catch {
-    return initialAboutData;
-  }
+    if (local) {
+      const parsed = JSON.parse(local);
+      return {
+        ...initialAboutData,
+        ...parsed,
+        capabilities: Array.isArray(parsed.capabilities) ? parsed.capabilities : initialAboutData.capabilities
+      };
+    }
+  } catch {}
+
+  return initialAboutData;
 }
 
 // Subscribe to Contact data real-time
 export function subscribeContactData(callback: (contact: ContactData) => void): () => void {
-  if (!db) {
+  const loadFallback = () => {
     try {
       const local = localStorage.getItem('subeg_contact_data');
-      callback(local ? JSON.parse(local) : initialContactData);
-    } catch {
-      callback(initialContactData);
-    }
+      if (local) {
+        const parsed = JSON.parse(local);
+        callback({
+          ...initialContactData,
+          ...parsed,
+          additionalLinks: Array.isArray(parsed.additionalLinks) ? parsed.additionalLinks : initialContactData.additionalLinks
+        });
+        return;
+      }
+    } catch {}
+    callback(initialContactData);
+  };
+
+  if (!db) {
+    loadFallback();
     return () => {};
   }
+
   try {
     const docRef = doc(db, 'contact', 'main');
     return onSnapshot(
       docRef,
       async docSnap => {
         if (!docSnap.exists()) {
+          try {
+            const local = localStorage.getItem('subeg_contact_data');
+            if (local) {
+              const parsed = JSON.parse(local);
+              const data: ContactData = {
+                ...initialContactData,
+                ...parsed,
+                additionalLinks: Array.isArray(parsed.additionalLinks) ? parsed.additionalLinks : initialContactData.additionalLinks
+              };
+              callback(data);
+              setDoc(docRef, data, { merge: true }).catch(() => {});
+              return;
+            }
+          } catch {}
           callback(initialContactData);
+          setDoc(docRef, initialContactData, { merge: true }).catch(() => {});
           return;
         }
-        const data = docSnap.data() as ContactData;
+
+        const raw = docSnap.data() as ContactData;
+        const data: ContactData = {
+          ...initialContactData,
+          ...raw,
+          additionalLinks: Array.isArray(raw.additionalLinks) ? raw.additionalLinks : initialContactData.additionalLinks
+        };
         try {
           localStorage.setItem('subeg_contact_data', JSON.stringify(data));
         } catch {}
         callback(data);
       },
-      () => {
-        try {
-          const local = localStorage.getItem('subeg_contact_data');
-          callback(local ? JSON.parse(local) : initialContactData);
-        } catch {
-          callback(initialContactData);
-        }
+      error => {
+        console.warn('Firestore subscribe contact notice:', error);
+        loadFallback();
       }
     );
   } catch {
-    try {
-      const local = localStorage.getItem('subeg_contact_data');
-      callback(local ? JSON.parse(local) : initialContactData);
-    } catch {
-      callback(initialContactData);
-    }
+    loadFallback();
     return () => {};
   }
 }
@@ -403,7 +481,12 @@ export async function fetchContactData(): Promise<ContactData> {
       const docRef = doc(db, 'contact', 'main');
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        const data = docSnap.data() as ContactData;
+        const raw = docSnap.data() as ContactData;
+        const data: ContactData = {
+          ...initialContactData,
+          ...raw,
+          additionalLinks: Array.isArray(raw.additionalLinks) ? raw.additionalLinks : initialContactData.additionalLinks
+        };
         try {
           localStorage.setItem('subeg_contact_data', JSON.stringify(data));
         } catch {}
@@ -415,55 +498,101 @@ export async function fetchContactData(): Promise<ContactData> {
   }
 
   try {
+    const res = await fetch('/api/contact');
+    if (res.ok) {
+      const serverData = await res.json();
+      if (serverData && typeof serverData === 'object') {
+        const data: ContactData = {
+          ...initialContactData,
+          ...serverData,
+          additionalLinks: Array.isArray(serverData.additionalLinks) ? serverData.additionalLinks : initialContactData.additionalLinks
+        };
+        try {
+          localStorage.setItem('subeg_contact_data', JSON.stringify(data));
+        } catch {}
+        return data;
+      }
+    }
+  } catch {}
+
+  try {
     const local = localStorage.getItem('subeg_contact_data');
-    return local ? JSON.parse(local) : initialContactData;
-  } catch {
-    return initialContactData;
-  }
+    if (local) {
+      const parsed = JSON.parse(local);
+      return {
+        ...initialContactData,
+        ...parsed,
+        additionalLinks: Array.isArray(parsed.additionalLinks) ? parsed.additionalLinks : initialContactData.additionalLinks
+      };
+    }
+  } catch {}
+
+  return initialContactData;
 }
 
 // Subscribe to Settings real-time
 export function subscribeSiteSettings(callback: (settings: SiteSettings) => void): () => void {
-  if (!db) {
+  const loadFallback = () => {
     try {
       const local = localStorage.getItem('subeg_site_settings');
-      callback(local ? JSON.parse(local) : initialSiteSettings);
-    } catch {
-      callback(initialSiteSettings);
-    }
+      if (local) {
+        const parsed = JSON.parse(local);
+        callback({
+          ...initialSiteSettings,
+          ...parsed
+        });
+        return;
+      }
+    } catch {}
+    callback(initialSiteSettings);
+  };
+
+  if (!db) {
+    loadFallback();
     return () => {};
   }
+
   try {
     const docRef = doc(db, 'settings', 'main');
     return onSnapshot(
       docRef,
       async docSnap => {
         if (!docSnap.exists()) {
+          try {
+            const local = localStorage.getItem('subeg_site_settings');
+            if (local) {
+              const parsed = JSON.parse(local);
+              const data: SiteSettings = {
+                ...initialSiteSettings,
+                ...parsed
+              };
+              callback(data);
+              setDoc(docRef, data, { merge: true }).catch(() => {});
+              return;
+            }
+          } catch {}
           callback(initialSiteSettings);
+          setDoc(docRef, initialSiteSettings, { merge: true }).catch(() => {});
           return;
         }
-        const data = docSnap.data() as SiteSettings;
+
+        const raw = docSnap.data() as SiteSettings;
+        const data: SiteSettings = {
+          ...initialSiteSettings,
+          ...raw
+        };
         try {
           localStorage.setItem('subeg_site_settings', JSON.stringify(data));
         } catch {}
         callback(data);
       },
-      () => {
-        try {
-          const local = localStorage.getItem('subeg_site_settings');
-          callback(local ? JSON.parse(local) : initialSiteSettings);
-        } catch {
-          callback(initialSiteSettings);
-        }
+      error => {
+        console.warn('Firestore subscribe settings notice:', error);
+        loadFallback();
       }
     );
   } catch {
-    try {
-      const local = localStorage.getItem('subeg_site_settings');
-      callback(local ? JSON.parse(local) : initialSiteSettings);
-    } catch {
-      callback(initialSiteSettings);
-    }
+    loadFallback();
     return () => {};
   }
 }
@@ -474,7 +603,11 @@ export async function fetchSiteSettings(): Promise<SiteSettings> {
       const docRef = doc(db, 'settings', 'main');
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        const data = docSnap.data() as SiteSettings;
+        const raw = docSnap.data() as SiteSettings;
+        const data: SiteSettings = {
+          ...initialSiteSettings,
+          ...raw
+        };
         try {
           localStorage.setItem('subeg_site_settings', JSON.stringify(data));
         } catch {}
@@ -486,11 +619,34 @@ export async function fetchSiteSettings(): Promise<SiteSettings> {
   }
 
   try {
+    const res = await fetch('/api/settings');
+    if (res.ok) {
+      const serverData = await res.json();
+      if (serverData && typeof serverData === 'object') {
+        const data: SiteSettings = {
+          ...initialSiteSettings,
+          ...serverData
+        };
+        try {
+          localStorage.setItem('subeg_site_settings', JSON.stringify(data));
+        } catch {}
+        return data;
+      }
+    }
+  } catch {}
+
+  try {
     const local = localStorage.getItem('subeg_site_settings');
-    return local ? JSON.parse(local) : initialSiteSettings;
-  } catch {
-    return initialSiteSettings;
-  }
+    if (local) {
+      const parsed = JSON.parse(local);
+      return {
+        ...initialSiteSettings,
+        ...parsed
+      };
+    }
+  } catch {}
+
+  return initialSiteSettings;
 }
 
 // Admin Auth
@@ -503,6 +659,14 @@ export async function adminLogin(password: string): Promise<{ success: boolean; 
   if (password === 'subeg2026') {
     const token = DEFAULT_ADMIN_TOKEN;
     setAdminToken(token);
+    try {
+      await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ password })
+      });
+    } catch {}
     return { success: true, token };
   } else {
     return { success: false, error: 'Invalid password' };
@@ -679,10 +843,19 @@ export async function saveAboutApi(data: Partial<AboutData>): Promise<AboutData>
   let current: AboutData = initialAboutData;
   try {
     const local = localStorage.getItem('subeg_about_data');
-    if (local) current = JSON.parse(local);
+    if (local) {
+      const parsed = JSON.parse(local);
+      current = { ...initialAboutData, ...parsed };
+    }
   } catch {}
 
-  const updated: AboutData = { ...current, ...data };
+  const updated: AboutData = {
+    ...current,
+    ...data,
+    capabilities: data.capabilities !== undefined
+      ? (Array.isArray(data.capabilities) ? data.capabilities : [])
+      : current.capabilities
+  };
 
   // 1. Synchronously save to localStorage
   try {
@@ -722,14 +895,25 @@ export async function saveContactApi(data: Partial<ContactData>): Promise<Contac
   let current: ContactData = initialContactData;
   try {
     const local = localStorage.getItem('subeg_contact_data');
-    if (local) current = JSON.parse(local);
+    if (local) {
+      const parsed = JSON.parse(local);
+      current = { ...initialContactData, ...parsed };
+    }
   } catch {}
 
-  const updated: ContactData = { ...current, ...data };
+  const updated: ContactData = {
+    ...current,
+    ...data,
+    additionalLinks: data.additionalLinks !== undefined
+      ? (Array.isArray(data.additionalLinks) ? data.additionalLinks : [])
+      : current.additionalLinks
+  };
 
   try {
     localStorage.setItem('subeg_contact_data', JSON.stringify(updated));
-  } catch {}
+  } catch (e) {
+    console.warn('LocalStorage save contact notice:', e);
+  }
 
   try {
     if (db) {
@@ -760,14 +944,19 @@ export async function saveSettingsApi(data: Partial<SiteSettings>): Promise<Site
   let current: SiteSettings = initialSiteSettings;
   try {
     const local = localStorage.getItem('subeg_site_settings');
-    if (local) current = JSON.parse(local);
+    if (local) {
+      const parsed = JSON.parse(local);
+      current = { ...initialSiteSettings, ...parsed };
+    }
   } catch {}
 
   const updated: SiteSettings = { ...current, ...data };
 
   try {
     localStorage.setItem('subeg_site_settings', JSON.stringify(updated));
-  } catch {}
+  } catch (e) {
+    console.warn('LocalStorage save settings notice:', e);
+  }
 
   try {
     if (db) {

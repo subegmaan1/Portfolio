@@ -5,33 +5,36 @@ import { Save, Plus, Trash2 } from 'lucide-react';
 
 interface AdminContactEditorProps {
   contact: ContactData;
-  onRefreshContact: () => void;
+  onRefreshContact: (newContact?: ContactData) => void;
 }
 
 export const AdminContactEditor: React.FC<AdminContactEditorProps> = ({
   contact,
   onRefreshContact
 }) => {
-  const [email, setEmail] = useState(contact.email || '');
-  const [location, setLocation] = useState(contact.location || '');
-  const [additionalLinks, setAdditionalLinks] = useState(contact.additionalLinks || []);
+  const [email, setEmail] = useState(contact?.email || 'projectiondjjs@gmail.com');
+  const [location, setLocation] = useState(contact?.location || 'New York / Global');
+  const [additionalLinks, setAdditionalLinks] = useState(Array.isArray(contact?.additionalLinks) ? contact.additionalLinks : []);
+  const [isDirty, setIsDirty] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
 
   useEffect(() => {
-    if (contact) {
-      setEmail(contact.email || '');
-      setLocation(contact.location || '');
-      setAdditionalLinks(contact.additionalLinks || []);
+    if (contact && !isDirty) {
+      setEmail(contact.email || 'projectiondjjs@gmail.com');
+      setLocation(contact.location || 'New York / Global');
+      setAdditionalLinks(Array.isArray(contact.additionalLinks) ? contact.additionalLinks : []);
     }
-  }, [contact]);
+  }, [contact, isDirty]);
 
   const addLink = () => {
+    setIsDirty(true);
     setAdditionalLinks(prev => [...prev, { label: '', url: '' }]);
   };
 
   const removeLink = (index: number) => {
+    setIsDirty(true);
     setAdditionalLinks(prev => prev.filter((_, i) => i !== index));
   };
 
@@ -41,13 +44,15 @@ export const AdminContactEditor: React.FC<AdminContactEditorProps> = ({
     setMessage('');
 
     try {
-      await saveContactApi({
+      const payload: Partial<ContactData> = {
         email,
         location,
-        additionalLinks: additionalLinks.filter(l => l.label && l.url)
-      });
+        additionalLinks: additionalLinks.filter(l => l && l.label && l.url)
+      };
+      const saved = await saveContactApi(payload);
+      setIsDirty(false);
       setMessage('Contact details updated successfully!');
-      onRefreshContact();
+      onRefreshContact(saved);
       setTimeout(() => setMessage(''), 4000);
     } catch {
       setMessage('Contact details updated in local and cloud stores.');
@@ -93,7 +98,10 @@ export const AdminContactEditor: React.FC<AdminContactEditorProps> = ({
             <input
               type="email"
               value={email}
-              onChange={e => setEmail(e.target.value)}
+              onChange={e => {
+                setEmail(e.target.value);
+                setIsDirty(true);
+              }}
               className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 font-syne font-bold text-base"
               required
             />
@@ -104,7 +112,10 @@ export const AdminContactEditor: React.FC<AdminContactEditorProps> = ({
             <input
               type="text"
               value={location}
-              onChange={e => setLocation(e.target.value)}
+              onChange={e => {
+                setLocation(e.target.value);
+                setIsDirty(true);
+              }}
               placeholder="New York / Global"
               className="w-full px-4 py-2 bg-neutral-950 border border-neutral-800 text-neutral-200"
             />

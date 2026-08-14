@@ -340,18 +340,39 @@ export default function App() {
             )}
             {adminTab === 'MEDIA' && <AdminMediaLibrary />}
             {adminTab === 'ABOUT' && about && (
-              <AdminAboutEditor about={about} onRefreshAbout={loadPublicData} />
+              <AdminAboutEditor
+                about={about}
+                onRefreshAbout={(newAbout?: AboutData) => {
+                  if (newAbout) setAbout(newAbout);
+                  loadPublicData();
+                }}
+              />
             )}
             {adminTab === 'CV' && about && (
-              <AdminCVManager about={about} onRefreshAbout={loadPublicData} />
+              <AdminCVManager
+                about={about}
+                onRefreshAbout={(newAbout?: AboutData) => {
+                  if (newAbout) setAbout(newAbout);
+                  loadPublicData();
+                }}
+              />
             )}
             {adminTab === 'CONTACT' && contact && (
-              <AdminContactEditor contact={contact} onRefreshContact={loadPublicData} />
+              <AdminContactEditor
+                contact={contact}
+                onRefreshContact={(newContact?: ContactData) => {
+                  if (newContact) setContact(newContact);
+                  loadPublicData();
+                }}
+              />
             )}
             {adminTab === 'SETTINGS' && settings && (
               <AdminSettings
                 settings={settings}
-                onRefreshSettings={loadPublicData}
+                onRefreshSettings={(newSettings?: SiteSettings) => {
+                  if (newSettings) setSettings(newSettings);
+                  loadPublicData();
+                }}
                 onRefreshAllData={loadPublicData}
               />
             )}
