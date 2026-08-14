@@ -242,8 +242,19 @@ export default function App() {
           <AdminProjectForm
             initialProject={editingProject}
             onCancel={() => setEditingProject(null)}
-            onSaveSuccess={() => {
+            onSaveSuccess={(savedProj?: Project) => {
               setEditingProject(null);
+              if (savedProj) {
+                setProjects(prev => {
+                  const idx = prev.findIndex(p => p.id === savedProj.id);
+                  if (idx !== -1) {
+                    const copy = [...prev];
+                    copy[idx] = savedProj;
+                    return copy;
+                  }
+                  return [savedProj, ...prev];
+                });
+              }
               loadPublicData();
             }}
           />

@@ -71,52 +71,7 @@ function saveStore(store: StoreSchema): void {
 let currentStore = loadStore();
 
 function processDataUrls(obj: any): any {
-  if (obj === null || obj === undefined) return obj;
-  if (typeof obj === 'string') {
-    const match = obj.match(/^data:(image\/[a-zA-Z0-9+.-]+|video\/[a-zA-Z0-9+.-]+|application\/pdf);base64,([\s\S]+)$/i);
-    if (match) {
-      const mimeType = match[1];
-      const base64Data = match[2].replace(/\s/g, '');
-      const rawExt = mimeType.split('/')[1]?.replace('+xml', '') || 'png';
-      const ext = rawExt.toLowerCase() === 'jpeg' ? 'jpg' : rawExt.toLowerCase();
-      const filename = `upload-${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${ext}`;
-      const filePath = path.join(UPLOADS_DIR, filename);
-      try {
-        fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
-        const fileUrl = `/uploads/${filename}`;
-        
-        if (!currentStore.media.some(m => m.filename === filename)) {
-          const stats = fs.statSync(filePath);
-          currentStore.media.unshift({
-            id: filename,
-            filename,
-            originalName: `Uploaded Media.${ext}`,
-            url: fileUrl,
-            mimeType,
-            size: stats.size,
-            uploadedAt: new Date().toISOString()
-          });
-        }
-        return fileUrl;
-      } catch (err) {
-        console.error('Failed to convert base64 upload:', err);
-      }
-    }
-    return obj;
-  }
-
-  if (Array.isArray(obj)) {
-    return obj.map(item => processDataUrls(item));
-  }
-
-  if (typeof obj === 'object') {
-    const res: any = {};
-    for (const key of Object.keys(obj)) {
-      res[key] = processDataUrls(obj[key]);
-    }
-    return res;
-  }
-
+  // Preserve self-contained data URLs so they persist seamlessly across static hosting (GitHub Pages), Firestore, and server
   return obj;
 }
 

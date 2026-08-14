@@ -7,7 +7,7 @@ import { ArrowLeft, Save, Upload, Plus, Trash2, Video, Play, ExternalLink } from
 interface AdminProjectFormProps {
   initialProject: Partial<Project> | null;
   onCancel: () => void;
-  onSaveSuccess: () => void;
+  onSaveSuccess: (savedProject?: Project) => void;
 }
 
 export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
@@ -71,13 +71,9 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
           }
         }
         if (uploadedUrls.length > 0) {
-          setGallery(prev => {
-            // Remove any broken /uploads/ paths when fresh photos are uploaded
-            const cleanPrev = prev.filter(u => u && !u.startsWith('/uploads/'));
-            return [...cleanPrev, ...uploadedUrls];
-          });
-          // Also set hero media if currently empty or broken
-          if (!heroMedia || heroMedia.startsWith('/uploads/')) {
+          setGallery(prev => [...prev.filter(Boolean), ...uploadedUrls]);
+          // Also set hero media if currently empty
+          if (!heroMedia) {
             setHeroMedia(uploadedUrls[0]);
           }
         }
@@ -128,12 +124,11 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
 
     const cleanedGallery = gallery
       .map(g => g.trim())
-      .filter(Boolean)
-      .filter(g => !g.startsWith('/uploads/')); // Exclude broken relative server paths
+      .filter(Boolean);
 
     const cleanedVideos = videos.map(v => v.trim()).filter(Boolean);
-    const effectiveHero = heroMedia.startsWith('/uploads/') ? '' : heroMedia.trim();
-    const effectiveHeroMedia = effectiveHero || (cleanedGallery.length > 0 ? cleanedGallery[0] : '');
+    const effectiveHeroMedia = heroMedia.trim() || (cleanedGallery.length > 0 ? cleanedGallery[0] : '');
+    const effectiveHoverMedia = hoverMedia.trim() || effectiveHeroMedia;
 
     const projectData: Partial<Project> = {
       id: initialProject?.id,
@@ -146,7 +141,7 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
       shortDescription: shortDescription.trim(),
       longDescription: longDescription.trim(),
       heroMedia: effectiveHeroMedia,
-      hoverMedia: hoverMedia.startsWith('/uploads/') ? effectiveHeroMedia : (hoverMedia.trim() || effectiveHeroMedia),
+      hoverMedia: effectiveHoverMedia,
       videoStreamUrl: videoStreamUrl.trim(),
       enableStreaming,
       gallery: cleanedGallery,
@@ -154,12 +149,14 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
       tools: toolsArr,
       credits: credits.filter(c => c.role.trim() && c.name.trim()),
       featured,
-      published
+      published,
+      sortOrder: initialProject?.sortOrder ?? 0,
+      createdAt: initialProject?.createdAt
     };
 
     try {
-      await saveProjectApi(projectData);
-      onSaveSuccess();
+      const saved = await saveProjectApi(projectData);
+      onSaveSuccess(saved);
     } catch (err: any) {
       console.error('Save failed:', err);
       setError(err?.message ? `Failed to save project: ${err.message}` : 'Failed to save project');
