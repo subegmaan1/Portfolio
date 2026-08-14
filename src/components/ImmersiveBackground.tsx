@@ -240,12 +240,12 @@ export const ImmersiveBackground: React.FC<ImmersiveBackgroundProps> = ({ active
     window.addEventListener('resize', handleResize);
 
     let animationFrameId: number;
-    let clock = new THREE.Clock();
+    const startTime = performance.now();
 
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
 
-      const elapsedTime = clock.getElapsedTime();
+      const elapsedTime = (performance.now() - startTime) * 0.001;
 
       // Silky responsive mouse/touch lerp (faster response on touch)
       const lerpSpeed = isTouchInteraction ? 0.25 : 0.12;
