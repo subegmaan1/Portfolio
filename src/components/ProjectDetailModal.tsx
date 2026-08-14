@@ -118,6 +118,9 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
                 alt={project.title}
                 className="w-full h-full object-cover"
                 referrerPolicy="no-referrer"
+                onError={e => {
+                  (e.currentTarget as HTMLElement).style.display = 'none';
+                }}
               />
             )}
           </div>

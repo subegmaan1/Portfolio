@@ -71,7 +71,15 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
           }
         }
         if (uploadedUrls.length > 0) {
-          setGallery(prev => [...prev, ...uploadedUrls]);
+          setGallery(prev => {
+            // Remove any broken /uploads/ paths when fresh photos are uploaded
+            const cleanPrev = prev.filter(u => u && !u.startsWith('/uploads/'));
+            return [...cleanPrev, ...uploadedUrls];
+          });
+          // Also set hero media if currently empty or broken
+          if (!heroMedia || heroMedia.startsWith('/uploads/')) {
+            setHeroMedia(uploadedUrls[0]);
+          }
         }
       } else {
         const file = files[0];
@@ -118,9 +126,14 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
       .map(t => t.trim())
       .filter(Boolean);
 
-    const cleanedGallery = gallery.map(g => g.trim()).filter(Boolean);
+    const cleanedGallery = gallery
+      .map(g => g.trim())
+      .filter(Boolean)
+      .filter(g => !g.startsWith('/uploads/')); // Exclude broken relative server paths
+
     const cleanedVideos = videos.map(v => v.trim()).filter(Boolean);
-    const effectiveHeroMedia = heroMedia.trim() || (cleanedGallery.length > 0 ? cleanedGallery[0] : '');
+    const effectiveHero = heroMedia.startsWith('/uploads/') ? '' : heroMedia.trim();
+    const effectiveHeroMedia = effectiveHero || (cleanedGallery.length > 0 ? cleanedGallery[0] : '');
 
     const projectData: Partial<Project> = {
       id: initialProject?.id,
@@ -133,7 +146,7 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
       shortDescription: shortDescription.trim(),
       longDescription: longDescription.trim(),
       heroMedia: effectiveHeroMedia,
-      hoverMedia: hoverMedia.trim() || effectiveHeroMedia,
+      hoverMedia: hoverMedia.startsWith('/uploads/') ? effectiveHeroMedia : (hoverMedia.trim() || effectiveHeroMedia),
       videoStreamUrl: videoStreamUrl.trim(),
       enableStreaming,
       gallery: cleanedGallery,
@@ -147,8 +160,9 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
     try {
       await saveProjectApi(projectData);
       onSaveSuccess();
-    } catch (err) {
-      setError('Failed to save project');
+    } catch (err: any) {
+      console.error('Save failed:', err);
+      setError(err?.message ? `Failed to save project: ${err.message}` : 'Failed to save project');
     } finally {
       setSaving(false);
     }

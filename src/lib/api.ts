@@ -43,7 +43,7 @@ function getAuthHeaders(): Record<string, string> {
 
 // Convert File to optimized Data URL for universal cross-device persistence
 export async function fileToDataUrl(file: File): Promise<string> {
-  // If it's an image, optimize and resize to max 1920px to prevent Firestore 1MB document quota overflow
+  // If it's an image, optimize and resize to max 1280px with adaptive compression
   if (file.type.startsWith('image/') && typeof window !== 'undefined') {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -52,7 +52,7 @@ export async function fileToDataUrl(file: File): Promise<string> {
         const img = new Image();
         img.onload = () => {
           try {
-            const maxDim = 1920;
+            const maxDim = 1280;
             let width = img.width;
             let height = img.height;
 
@@ -75,8 +75,25 @@ export async function fileToDataUrl(file: File): Promise<string> {
               return;
             }
 
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
             ctx.drawImage(img, 0, 0, width, height);
-            const optimized = canvas.toDataURL('image/jpeg', 0.85);
+
+            let quality = 0.72;
+            let optimized = canvas.toDataURL('image/jpeg', quality);
+
+            // Progressive size reduction to guarantee under 100KB per image (Firestore safety)
+            if (optimized.length > 140000) {
+              quality = 0.62;
+              optimized = canvas.toDataURL('image/jpeg', quality);
+            }
+            if (optimized.length > 140000) {
+              canvas.width = Math.round(width * 0.8);
+              canvas.height = Math.round(height * 0.8);
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              optimized = canvas.toDataURL('image/jpeg', 0.58);
+            }
+
             resolve(optimized);
           } catch {
             resolve(rawDataUrl);

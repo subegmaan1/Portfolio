@@ -164,13 +164,32 @@ export const ProjectGalleryCarousel: React.FC<ProjectGalleryCarouselProps> = ({
                 className="w-full h-full object-contain"
               />
             ) : (
-              <img
-                src={currentMedia}
-                alt={`${projectTitle} documentation ${currentIndex + 1}`}
-                className="w-full h-full object-contain cursor-zoom-in"
-                onClick={() => setIsFullscreen(true)}
-                referrerPolicy="no-referrer"
-              />
+              <div className="relative w-full h-full flex items-center justify-center">
+                <img
+                  src={currentMedia}
+                  alt={`${projectTitle} documentation ${currentIndex + 1}`}
+                  className="w-full h-full object-contain cursor-zoom-in"
+                  onClick={() => setIsFullscreen(true)}
+                  referrerPolicy="no-referrer"
+                  onError={e => {
+                    (e.currentTarget as HTMLElement).style.display = 'none';
+                    const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                    if (fallback) fallback.style.display = 'flex';
+                  }}
+                />
+                <div
+                  style={{ display: 'none' }}
+                  className="w-full h-full flex flex-col items-center justify-center text-neutral-500 font-mono text-xs p-6 text-center space-y-2 bg-neutral-950"
+                >
+                  <ImageIcon className="w-8 h-8 text-neutral-600 mb-1" />
+                  <p className="text-neutral-400 font-bold uppercase tracking-wider">Image Unavailable</p>
+                  <p className="text-[11px] text-neutral-600 max-w-sm">
+                    {currentMedia.startsWith('/uploads/')
+                      ? 'Local path not accessible on static hosting. Please re-upload in Admin.'
+                      : 'Unable to load photo from provided source.'}
+                  </p>
+                </div>
+              </div>
             )}
           </motion.div>
         </AnimatePresence>
@@ -235,6 +254,9 @@ export const ProjectGalleryCarousel: React.FC<ProjectGalleryCarouselProps> = ({
                     alt=""
                     className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
+                    onError={e => {
+                      (e.currentTarget as HTMLElement).style.display = 'none';
+                    }}
                   />
                 )}
                 <span className="absolute bottom-1 right-1 font-mono text-[9px] px-1 bg-neutral-950/90 text-neutral-300 border border-white/10">
