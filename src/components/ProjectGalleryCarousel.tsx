@@ -23,7 +23,7 @@ export const ProjectGalleryCarousel: React.FC<ProjectGalleryCarouselProps> = ({
   const touchEndX = useRef<number | null>(null);
 
   // Filter out empty items
-  const validItems = items.filter(item => typeof item === 'string' && item.trim().length > 0);
+  const validItems = (items || []).filter(item => typeof item === 'string' && item.trim().length > 0);
   const total = validItems.length;
 
   const goToNext = useCallback(() => {

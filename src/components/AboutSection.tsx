@@ -332,7 +332,12 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ about, projects = []
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {about.capabilities.map((cap, idx) => (
+          {(about.capabilities || [
+            'Architectural Disguise (d3)',
+            'Notch VFX Real-Time Shaders',
+            'Unreal Engine 5 nDisplay',
+            'TouchDesigner Spatial Mapping'
+          ]).map((cap, idx) => (
             <div
               key={idx}
               className="p-4 bg-white/[0.02] border border-white/[0.06] hover:border-teal-500/40 transition-colors group rounded-none"

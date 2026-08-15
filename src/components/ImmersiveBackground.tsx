@@ -245,26 +245,32 @@ export const ImmersiveBackground: React.FC<ImmersiveBackgroundProps> = ({ active
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
 
-      const elapsedTime = (performance.now() - startTime) * 0.001;
+      try {
+        const elapsedTime = (performance.now() - startTime) * 0.001;
 
-      // Silky responsive mouse/touch lerp (faster response on touch)
-      const lerpSpeed = isTouchInteraction ? 0.25 : 0.12;
-      mousePos.current.x += (mousePos.current.targetX - mousePos.current.x) * lerpSpeed;
-      mousePos.current.y += (mousePos.current.targetY - mousePos.current.y) * lerpSpeed;
-      uniforms.uMouse.value.set(mousePos.current.x, mousePos.current.y);
+        // Silky responsive mouse/touch lerp (faster response on touch)
+        const lerpSpeed = isTouchInteraction ? 0.25 : 0.12;
+        mousePos.current.x += (mousePos.current.targetX - mousePos.current.x) * lerpSpeed;
+        mousePos.current.y += (mousePos.current.targetY - mousePos.current.y) * lerpSpeed;
+        uniforms.uMouse.value.set(mousePos.current.x, mousePos.current.y);
 
-      if (!prefersReducedMotion) {
-        uniforms.uTime.value = elapsedTime;
+        if (!prefersReducedMotion) {
+          uniforms.uTime.value = elapsedTime;
+        }
+
+        // Smoothly interpolate uniform colors toward target palette
+        const target = targetPalette.current;
+        if (target) {
+          uniforms.uColorBase.value.lerp(target.base, 0.04);
+          uniforms.uColor1.value.lerp(target.color1, 0.04);
+          uniforms.uColor2.value.lerp(target.color2, 0.04);
+          uniforms.uColor3.value.lerp(target.color3, 0.04);
+        }
+
+        renderer.render(scene, camera);
+      } catch (err) {
+        console.warn('WebGL render issue:', err);
       }
-
-      // Smoothly interpolate uniform colors toward target palette
-      const target = targetPalette.current;
-      uniforms.uColorBase.value.lerp(target.base, 0.04);
-      uniforms.uColor1.value.lerp(target.color1, 0.04);
-      uniforms.uColor2.value.lerp(target.color2, 0.04);
-      uniforms.uColor3.value.lerp(target.color3, 0.04);
-
-      renderer.render(scene, camera);
     };
 
     animate();

@@ -162,10 +162,10 @@ export default function App() {
         fetchSiteSettings(),
         fetchProjects()
       ]);
-      setAbout(abt);
-      setContact(cnt);
-      setSettings(stg);
-      setProjects(prj);
+      if (abt) setAbout(prev => ({ ...initialAboutData, ...prev, ...abt }));
+      if (cnt) setContact(prev => ({ ...initialContactData, ...prev, ...cnt }));
+      if (stg) setSettings(prev => ({ ...initialSiteSettings, ...prev, ...stg }));
+      if (Array.isArray(prj) && prj.length > 0) setProjects(prj);
     } catch (err) {
       console.error('Failed to load initial data:', err);
     } finally {
@@ -182,12 +182,26 @@ export default function App() {
     verifyAdminStatus();
 
     const unsubProjects = subscribeProjects(data => {
-      setProjects(data);
+      if (Array.isArray(data) && data.length > 0) {
+        setProjects(data);
+      }
       setLoading(false);
     });
-    const unsubAbout = subscribeAboutData(data => setAbout(data));
-    const unsubContact = subscribeContactData(data => setContact(data));
-    const unsubSettings = subscribeSiteSettings(data => setSettings(data));
+    const unsubAbout = subscribeAboutData(data => {
+      if (data && typeof data === 'object') {
+        setAbout(prev => ({ ...initialAboutData, ...prev, ...data }));
+      }
+    });
+    const unsubContact = subscribeContactData(data => {
+      if (data && typeof data === 'object') {
+        setContact(prev => ({ ...initialContactData, ...prev, ...data }));
+      }
+    });
+    const unsubSettings = subscribeSiteSettings(data => {
+      if (data && typeof data === 'object') {
+        setSettings(prev => ({ ...initialSiteSettings, ...prev, ...data }));
+      }
+    });
 
     return () => {
       unsubProjects();
