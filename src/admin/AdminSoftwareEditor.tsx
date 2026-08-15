@@ -3,8 +3,10 @@ import { SoftwareTool } from '../types';
 import { initialSoftwareTools } from '../data/initial-store';
 import {
   fetchSoftwareTools,
+  subscribeSoftwareTools,
   saveSoftwareToolsApi,
-  resetSoftwareToolsApi
+  resetSoftwareToolsApi,
+  uploadMediaApi
 } from '../lib/api';
 import {
   Plus,
@@ -216,20 +218,26 @@ export const AdminSoftwareEditor: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    loadTools();
-  }, []);
-
-  const loadTools = async () => {
     setLoading(true);
-    try {
-      const data = await fetchSoftwareTools();
-      setTools(data);
-    } catch {
-      setTools(initialSoftwareTools);
-    } finally {
+    const unsub = subscribeSoftwareTools((updatedTools) => {
+      if (updatedTools && updatedTools.length > 0) {
+        setTools(updatedTools);
+        setLoading(false);
+      }
+    });
+
+    // Also trigger authoritative load from backend
+    fetchSoftwareTools().then((data) => {
+      if (data && data.length > 0) {
+        setTools(data);
+      }
       setLoading(false);
-    }
-  };
+    }).catch(() => {
+      setLoading(false);
+    });
+
+    return () => unsub();
+  }, []);
 
   const handleOpenAdd = () => {
     setIsNew(true);
@@ -266,7 +274,7 @@ export const AdminSoftwareEditor: React.FC = () => {
     setFormEnabled(tool.enabled !== false);
   };
 
-  // Auto-resize image via Canvas or read clean SVG code
+  // Upload logo via backend API or auto-resize via canvas fallback
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -278,25 +286,31 @@ export const AdminSoftwareEditor: React.FC = () => {
       const isSvg = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
 
       if (isSvg) {
-        // Read SVG XML directly
+        // Read SVG XML directly for vector fidelity
         const reader = new FileReader();
         reader.onload = (event) => {
           const svgText = (event.target?.result as string) || '';
           if (svgText.includes('<svg')) {
             setFormCustomSvgCode(svgText);
-            setFormCustomIconUrl('');
-            setMessage('SVG vector graphic loaded successfully!');
-          } else {
-            // Fallback to data URL
-            setFormCustomIconUrl(svgText);
           }
-          setUploadProcessing(false);
         };
         reader.readAsText(file);
-        return;
       }
 
-      // Raster image (PNG, JPG, WEBP): Auto-resize to crisp 160x160 canvas
+      // 1. Upload directly through the server /api/media/upload and Firestore media storage
+      try {
+        const media = await uploadMediaApi(file);
+        if (media?.url) {
+          setFormCustomIconUrl(media.url);
+          setMessage(`Logo uploaded successfully: ${file.name}`);
+          setUploadProcessing(false);
+          return;
+        }
+      } catch (uploadErr) {
+        console.warn('Backend upload fallback:', uploadErr);
+      }
+
+      // 2. Canvas fallback for raster images
       const objectUrl = URL.createObjectURL(file);
       const img = new Image();
       img.onload = () => {
@@ -325,19 +339,18 @@ export const AdminSoftwareEditor: React.FC = () => {
           ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
           const dataUrl = canvas.toDataURL('image/png');
           setFormCustomIconUrl(dataUrl);
-          setFormCustomSvgCode('');
-          setMessage(`Logo auto-resized and optimized to ${targetDim}x${targetDim}px!`);
+          setMessage(`Logo processed (${targetDim}x${targetDim}px)`);
         }
         setUploadProcessing(false);
       };
       img.onerror = () => {
         URL.revokeObjectURL(objectUrl);
-        alert('Failed to process image file');
+        setMessage('Failed to process image file');
         setUploadProcessing(false);
       };
       img.src = objectUrl;
     } catch {
-      alert('Error reading uploaded logo file');
+      setMessage('Error reading uploaded logo file');
       setUploadProcessing(false);
     }
   };
@@ -379,12 +392,16 @@ export const AdminSoftwareEditor: React.FC = () => {
     // Instant optimistic update
     setTools(newToolsList);
     setEditingTool(null);
-    setMessage(`"${updated.name}" saved!`);
+    setSaving(true);
+    setMessage(`Saving "${updated.name}"...`);
 
     try {
       await saveSoftwareToolsApi(newToolsList);
+      setMessage(`"${updated.name}" saved and persisted successfully!`);
     } catch {
-      console.warn('Background sync warning for software stack');
+      setMessage(`"${updated.name}" saved locally.`);
+    } finally {
+      setSaving(false);
     }
   };
 

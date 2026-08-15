@@ -227,14 +227,25 @@ async function seedFirestoreIfNeeded() {
     const metaDoc = await getDoc(doc(db, 'metadata', 'store_init'));
     if (!metaDoc.exists()) {
       isSeeding = true;
+
+      // Check if server datastore already has projects
+      let projectsToSeed = initialProjects;
+      try {
+        const serverProjects = await fetchFromServer<Project[] | null>('projects', null);
+        if (Array.isArray(serverProjects) && serverProjects.length > 0) {
+          projectsToSeed = serverProjects;
+        }
+      } catch {}
+
       // Seed Projects
-      for (const p of initialProjects) {
+      for (const p of projectsToSeed) {
         await setDoc(doc(db, 'projects', p.id), sanitizeForFirestore(p));
       }
       // Seed Content
       await setDoc(doc(db, 'content', 'about'), sanitizeForFirestore(initialAboutData));
       await setDoc(doc(db, 'content', 'contact'), sanitizeForFirestore(initialContactData));
       await setDoc(doc(db, 'content', 'settings'), sanitizeForFirestore(initialSiteSettings));
+      await setDoc(doc(db, 'content', 'software'), { tools: sanitizeForFirestore(initialSoftwareTools) });
       // Mark initialized
       await setDoc(doc(db, 'metadata', 'store_init'), {
         initialized: true,
@@ -272,14 +283,13 @@ export function subscribeProjects(callback: (projects: Project[]) => void): () =
     const projectsCol = collection(db, 'projects');
     unsubFirestore = onSnapshot(projectsCol, (snapshot) => {
       if (snapshot.empty) {
-        // Check if database was initialized before falling back to initialProjects
+        // Check if database was initialized before falling back
         getDoc(doc(db, 'metadata', 'store_init')).then((metaSnap) => {
           if (!metaSnap.exists()) {
             seedFirestoreIfNeeded().then(() => {
               callback(initialProjects);
             });
           } else {
-            // User genuinely has 0 projects in Firestore
             try {
               localStorage.setItem('subeg_projects_data', JSON.stringify([]));
             } catch {}
@@ -302,9 +312,10 @@ export function subscribeProjects(callback: (projects: Project[]) => void): () =
     });
   } catch {}
 
-  // 4. Server API fetch fallback (if backend is active)
+  // 4. Authoritative Server API fetch (ensures new sessions & cross-browser instances receive latest projects)
   fetchFromServer<Project[] | null>('projects', null).then((serverProjects) => {
     if (Array.isArray(serverProjects) && serverProjects.length > 0) {
+      serverProjects.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
       try {
         localStorage.setItem('subeg_projects_data', JSON.stringify(serverProjects));
       } catch {}
@@ -321,7 +332,21 @@ export function subscribeProjects(callback: (projects: Project[]) => void): () =
 }
 
 export async function fetchProjects(category?: string): Promise<Project[]> {
-  // 1. Try Firestore first
+  // 1. Try Server API first for authoritative cross-session data
+  try {
+    const serverProjects = await fetchFromServer<Project[] | null>('projects', null);
+    if (Array.isArray(serverProjects) && serverProjects.length > 0) {
+      serverProjects.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+      try {
+        localStorage.setItem('subeg_projects_data', JSON.stringify(serverProjects));
+      } catch {}
+      return category && category !== 'ALL'
+        ? serverProjects.filter((p) => p.category === category)
+        : serverProjects;
+    }
+  } catch {}
+
+  // 2. Try Firestore Cloud Database
   try {
     const projectsCol = collection(db, 'projects');
     const snapshot = await getDocs(projectsCol);
@@ -338,31 +363,15 @@ export async function fetchProjects(category?: string): Promise<Project[]> {
         ? list.filter((p) => p.category === category)
         : list;
     } else {
-      // Check if DB was initialized
       const meta = await getDoc(doc(db, 'metadata', 'store_init'));
       if (meta.exists()) {
-        // 0 projects is authoritative
         return [];
       }
-      // Seed if not initialized
       await seedFirestoreIfNeeded();
     }
   } catch (err) {
-    // Firestore error, fall through to server/localStorage
+    // Firestore error, fall through to localStorage
   }
-
-  // 2. Server API fallback
-  try {
-    const serverProjects = await fetchFromServer<Project[] | null>('projects', null);
-    if (Array.isArray(serverProjects)) {
-      try {
-        localStorage.setItem('subeg_projects_data', JSON.stringify(serverProjects));
-      } catch {}
-      return category && category !== 'ALL'
-        ? serverProjects.filter((p) => p.category === category)
-        : serverProjects;
-    }
-  } catch {}
 
   // 3. LocalStorage fallback
   const cached = getCachedProjects();
@@ -426,7 +435,7 @@ export async function saveProjectApi(project: Partial<Project>): Promise<Project
     broadcastStoreUpdate('projects', existingList);
   } catch {}
 
-  // 2. Persist to Firestore & Server in Parallel (non-blocking / fast-settle)
+  // 2. Persist to Firestore & Server in Parallel
   const isEdit = Boolean(project.id);
   const url = isEdit ? `/api/projects/${id}` : '/api/projects';
   const method = isEdit ? 'PUT' : 'POST';
@@ -442,22 +451,22 @@ export async function saveProjectApi(project: Partial<Project>): Promise<Project
 
   const serverSync = (async () => {
     try {
-      await fetch(url, {
+      const res = await fetch(url, {
         method,
         credentials: 'include',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify(fullProject)
       });
+      if (!res.ok) {
+        console.warn('Server project save response not OK:', res.status);
+      }
     } catch (e) {
       console.warn('Server write warning:', e);
     }
   })();
 
-  // Guarantee maximum 400ms wait while background sync completes
-  await Promise.race([
-    Promise.all([firestoreSync, serverSync]),
-    new Promise((resolve) => setTimeout(resolve, 400))
-  ]);
+  // Guarantee persistence on backend and cloud
+  await Promise.allSettled([firestoreSync, serverSync]);
 
   return fullProject;
 }
@@ -471,22 +480,29 @@ export async function deleteProjectApi(id: string): Promise<void> {
     broadcastStoreUpdate('projects', filtered);
   } catch {}
 
-  // 2. Delete from Firestore Cloud Database
-  try {
-    await deleteDoc(doc(db, 'projects', id));
-    await setDoc(doc(db, 'metadata', 'store_init'), { initialized: true }, { merge: true });
-  } catch (e) {
-    console.warn('Firestore delete warning:', e);
-  }
+  // 2. Delete from Firestore Cloud Database & Server in Parallel
+  const firestoreDelete = (async () => {
+    try {
+      await deleteDoc(doc(db, 'projects', id));
+      await setDoc(doc(db, 'metadata', 'store_init'), { initialized: true }, { merge: true });
+    } catch (e) {
+      console.warn('Firestore delete warning:', e);
+    }
+  })();
 
-  // 3. Delete from Server
-  try {
-    await fetch(`/api/projects/${id}`, {
-      method: 'DELETE',
-      credentials: 'include',
-      headers: getAuthHeaders()
-    });
-  } catch {}
+  const serverDelete = (async () => {
+    try {
+      await fetch(`/api/projects/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: getAuthHeaders()
+      });
+    } catch (e) {
+      console.warn('Server project delete warning:', e);
+    }
+  })();
+
+  await Promise.allSettled([firestoreDelete, serverDelete]);
 }
 
 export async function reorderProjectsApi(projectIds: string[]): Promise<void> {
@@ -504,23 +520,34 @@ export async function reorderProjectsApi(projectIds: string[]): Promise<void> {
     });
     localStorage.setItem('subeg_projects_data', JSON.stringify(reordered));
     broadcastStoreUpdate('projects', reordered);
+  } catch {}
 
-    // 2. Sync updated sort orders to Firestore
-    for (let idx = 0; idx < projectIds.length; idx++) {
-      const id = projectIds[idx];
-      setDoc(doc(db, 'projects', id), { sortOrder: idx }, { merge: true }).catch(() => {});
+  // 2. Sync updated sort orders to Firestore & Server in Parallel
+  const firestoreReorder = (async () => {
+    try {
+      for (let idx = 0; idx < projectIds.length; idx++) {
+        const id = projectIds[idx];
+        await setDoc(doc(db, 'projects', id), { sortOrder: idx }, { merge: true });
+      }
+    } catch (e) {
+      console.warn('Firestore reorder warning:', e);
     }
-  } catch {}
+  })();
 
-  // 3. Server reorder
-  try {
-    await fetch('/api/projects/reorder', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-      body: JSON.stringify({ projectIds })
-    });
-  } catch {}
+  const serverReorder = (async () => {
+    try {
+      await fetch('/api/projects/reorder', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ projectIds })
+      });
+    } catch (e) {
+      console.warn('Server project reorder warning:', e);
+    }
+  })();
+
+  await Promise.allSettled([firestoreReorder, serverReorder]);
 }
 
 // ==================== ABOUT ====================
@@ -908,7 +935,7 @@ export async function saveSettingsApi(data: Partial<SiteSettings>): Promise<Site
 // ==================== SOFTWARE TOOLKIT ====================
 
 export function subscribeSoftwareTools(callback: (tools: SoftwareTool[]) => void): () => void {
-  // 1. Local Cache
+  // 1. Instant local cache delivery
   try {
     const local = localStorage.getItem('subeg_software_tools');
     if (local) {
@@ -925,7 +952,7 @@ export function subscribeSoftwareTools(callback: (tools: SoftwareTool[]) => void
     callback(initialSoftwareTools);
   }
 
-  // 2. Broadcast events
+  // 2. Local broadcast event handler
   const handleUpdate = (e: Event) => {
     const custom = e as CustomEvent;
     if (custom.detail?.type === 'software' && Array.isArray(custom.detail?.payload)) {
@@ -944,22 +971,29 @@ export function subscribeSoftwareTools(callback: (tools: SoftwareTool[]) => void
     unsubFirestore = onSnapshot(softwareDocRef, (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        if (Array.isArray(data?.tools)) {
+        if (Array.isArray(data?.tools) && data.tools.length > 0) {
           const sorted = [...data.tools].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
           try {
             localStorage.setItem('subeg_software_tools', JSON.stringify(sorted));
           } catch {}
           callback(sorted);
-          return;
         }
       }
-      // If doc doesn't exist yet, seed initialSoftwareTools
-      setDoc(softwareDocRef, { tools: sanitizeForFirestore(initialSoftwareTools) }, { merge: true }).catch(() => {});
-      callback(initialSoftwareTools);
     }, (err) => {
       console.warn('Firestore software subscription warning:', err);
     });
   } catch {}
+
+  // 4. Server API fetch fallback (ensures new sessions receive server-persisted data)
+  fetchFromServer<SoftwareTool[] | null>('software', null).then((serverTools) => {
+    if (Array.isArray(serverTools) && serverTools.length > 0) {
+      const sorted = [...serverTools].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+      try {
+        localStorage.setItem('subeg_software_tools', JSON.stringify(sorted));
+      } catch {}
+      callback(sorted);
+    }
+  });
 
   return () => {
     if (typeof window !== 'undefined') {
@@ -970,40 +1004,40 @@ export function subscribeSoftwareTools(callback: (tools: SoftwareTool[]) => void
 }
 
 export async function fetchSoftwareTools(): Promise<SoftwareTool[]> {
-  // 1. Instant local storage retrieval
+  // 1. Try Server API first for authoritative cross-session data
+  try {
+    const serverTools = await fetchFromServer<SoftwareTool[] | null>('software', null);
+    if (Array.isArray(serverTools) && serverTools.length > 0) {
+      const sorted = [...serverTools].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+      try {
+        localStorage.setItem('subeg_software_tools', JSON.stringify(sorted));
+      } catch {}
+      return sorted;
+    }
+  } catch {}
+
+  // 2. Try Firestore Cloud Database
+  try {
+    const snap = await getDoc(doc(db, 'content', 'software'));
+    if (snap.exists()) {
+      const data = snap.data();
+      if (Array.isArray(data?.tools) && data.tools.length > 0) {
+        const sorted = [...data.tools].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+        try {
+          localStorage.setItem('subeg_software_tools', JSON.stringify(sorted));
+        } catch {}
+        return sorted;
+      }
+    }
+  } catch {}
+
+  // 3. LocalStorage fallback
   try {
     const local = localStorage.getItem('subeg_software_tools');
     if (local) {
       const parsed = JSON.parse(local);
       if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed;
-      }
-    }
-  } catch {}
-
-  // 2. Try Server API
-  try {
-    const res = await fetch('/api/software');
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
-        localStorage.setItem('subeg_software_tools', JSON.stringify(data));
-        return data;
-      }
-    }
-  } catch {}
-
-  // 3. Fallback to Firestore
-  try {
-    const snap = await getDoc(doc(db, 'content', 'software'));
-    if (snap.exists()) {
-      const data = snap.data();
-      if (Array.isArray(data?.tools)) {
-        const sorted = [...data.tools].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-        try {
-          localStorage.setItem('subeg_software_tools', JSON.stringify(sorted));
-        } catch {}
-        return sorted;
       }
     }
   } catch {}
@@ -1020,7 +1054,7 @@ export async function saveSoftwareToolsApi(tools: SoftwareTool[]): Promise<Softw
     broadcastStoreUpdate('software', sorted);
   } catch {}
 
-  // 2. Parallel background sync to Firestore & Server API
+  // 2. Parallel sync to Firestore & Server API
   const firestoreSync = (async () => {
     try {
       await setDoc(doc(db, 'content', 'software'), {
@@ -1035,22 +1069,22 @@ export async function saveSoftwareToolsApi(tools: SoftwareTool[]): Promise<Softw
 
   const serverSync = (async () => {
     try {
-      await fetch('/api/software', {
+      const res = await fetch('/api/software', {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify(sorted)
       });
+      if (!res.ok) {
+        console.warn('Server software save response not OK:', res.status);
+      }
     } catch (e) {
       console.warn('Server software save warning:', e);
     }
   })();
 
-  // Guarantee instant return within 200ms while background cloud sync finishes
-  await Promise.race([
-    Promise.all([firestoreSync, serverSync]),
-    new Promise((resolve) => setTimeout(resolve, 200))
-  ]);
+  // Guarantee writes reach both server disk store and cloud database
+  await Promise.allSettled([firestoreSync, serverSync]);
 
   return sorted;
 }
