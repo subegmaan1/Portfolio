@@ -1,5 +1,17 @@
 import { AboutData, ContactData, MediaItem, Project, SiteSettings } from '../types';
 import { initialAboutData, initialContactData, initialProjects, initialSiteSettings } from '../data/initial-store';
+import { db } from './firebase';
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  deleteDoc,
+  onSnapshot,
+  query,
+  orderBy
+} from 'firebase/firestore';
 
 const ADMIN_TOKEN_KEY = 'subeg_admin_token';
 const DEFAULT_ADMIN_TOKEN = 'subeg-admin-authenticated-token-2026';
@@ -39,6 +51,25 @@ function broadcastStoreUpdate(type: 'projects' | 'about' | 'contact' | 'settings
       window.dispatchEvent(new CustomEvent('subeg-store-update', { detail: { type, payload } }));
     } catch {}
   }
+}
+
+// Sanitize helper to remove undefined values before Firestore writes
+function sanitizeForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) return data;
+  if (Array.isArray(data)) {
+    return data.map(sanitizeForFirestore) as unknown as T;
+  }
+  if (typeof data === 'object') {
+    const result: any = {};
+    for (const key of Object.keys(data as any)) {
+      const val = (data as any)[key];
+      if (val !== undefined) {
+        result[key] = sanitizeForFirestore(val);
+      }
+    }
+    return result;
+  }
+  return data;
 }
 
 // Helper to convert File to optimized Data URL
@@ -171,50 +202,63 @@ async function fetchFromServer<T>(endpoint: string, fallback: T): Promise<T> {
       return await res.json();
     }
   } catch (err) {
-    console.warn(`Notice reading /api/${endpoint}:`, err);
+    // Expected on static hosting where /api is not available
   }
   return fallback;
 }
 
-// Cache trackers for snappy UI
-let lastProjectsJson = '';
-let lastAboutJson = '';
-let lastContactJson = '';
-let lastSettingsJson = '';
+// Local cache helper to get current local projects with fallback to initial
+function getCachedProjects(): Project[] {
+  try {
+    const local = localStorage.getItem('subeg_projects_data');
+    if (local !== null) {
+      const parsed = JSON.parse(local);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return initialProjects;
+}
+
+// Seeding check for Firestore
+let isSeeding = false;
+async function seedFirestoreIfNeeded() {
+  if (isSeeding) return;
+  try {
+    const metaDoc = await getDoc(doc(db, 'metadata', 'store_init'));
+    if (!metaDoc.exists()) {
+      isSeeding = true;
+      // Seed Projects
+      for (const p of initialProjects) {
+        await setDoc(doc(db, 'projects', p.id), sanitizeForFirestore(p));
+      }
+      // Seed Content
+      await setDoc(doc(db, 'content', 'about'), sanitizeForFirestore(initialAboutData));
+      await setDoc(doc(db, 'content', 'contact'), sanitizeForFirestore(initialContactData));
+      await setDoc(doc(db, 'content', 'settings'), sanitizeForFirestore(initialSiteSettings));
+      // Mark initialized
+      await setDoc(doc(db, 'metadata', 'store_init'), {
+        initialized: true,
+        seededAt: new Date().toISOString()
+      });
+      isSeeding = false;
+    }
+  } catch (e) {
+    isSeeding = false;
+  }
+}
 
 // ==================== PROJECTS ====================
 
 export function subscribeProjects(callback: (projects: Project[]) => void): () => void {
   // 1. Instant local cache delivery
-  try {
-    const local = localStorage.getItem('subeg_projects_data');
-    if (local) {
-      const parsed = JSON.parse(local);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        lastProjectsJson = local;
-        callback(parsed);
-      }
-    }
-  } catch {}
+  const cached = getCachedProjects();
+  callback(cached);
 
-  // 2. Fetch authoritative fresh data from server
-  fetchProjects().then((projects) => {
-    const jsonStr = JSON.stringify(projects);
-    if (jsonStr !== lastProjectsJson) {
-      lastProjectsJson = jsonStr;
-      callback(projects);
-    }
-  });
-
-  // 3. React instantly to local broadcasts
+  // 2. React to local custom broadcast events (0ms cross-component reactivity)
   const handleUpdate = (e: Event) => {
     const custom = e as CustomEvent;
     if (custom.detail?.type === 'projects' && Array.isArray(custom.detail?.payload)) {
-      const jsonStr = JSON.stringify(custom.detail.payload);
-      if (jsonStr !== lastProjectsJson) {
-        lastProjectsJson = jsonStr;
-        callback(custom.detail.payload);
-      }
+      callback(custom.detail.payload);
     }
   };
 
@@ -222,54 +266,109 @@ export function subscribeProjects(callback: (projects: Project[]) => void): () =
     window.addEventListener('subeg-store-update', handleUpdate);
   }
 
+  // 3. Real-time Firestore Cloud Subscription
+  let unsubFirestore = () => {};
+  try {
+    const projectsCol = collection(db, 'projects');
+    unsubFirestore = onSnapshot(projectsCol, (snapshot) => {
+      if (snapshot.empty) {
+        // Check if database was initialized before falling back to initialProjects
+        getDoc(doc(db, 'metadata', 'store_init')).then((metaSnap) => {
+          if (!metaSnap.exists()) {
+            seedFirestoreIfNeeded().then(() => {
+              callback(initialProjects);
+            });
+          } else {
+            // User genuinely has 0 projects in Firestore
+            try {
+              localStorage.setItem('subeg_projects_data', JSON.stringify([]));
+            } catch {}
+            callback([]);
+          }
+        }).catch(() => {});
+      } else {
+        const firestoreProjects: Project[] = [];
+        snapshot.forEach((docSnap) => {
+          firestoreProjects.push(docSnap.data() as Project);
+        });
+        firestoreProjects.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+        try {
+          localStorage.setItem('subeg_projects_data', JSON.stringify(firestoreProjects));
+        } catch {}
+        callback(firestoreProjects);
+      }
+    }, (error) => {
+      console.warn('Firestore subscription fallback:', error.message);
+    });
+  } catch {}
+
+  // 4. Server API fetch fallback (if backend is active)
+  fetchFromServer<Project[] | null>('projects', null).then((serverProjects) => {
+    if (Array.isArray(serverProjects) && serverProjects.length > 0) {
+      try {
+        localStorage.setItem('subeg_projects_data', JSON.stringify(serverProjects));
+      } catch {}
+      callback(serverProjects);
+    }
+  });
+
   return () => {
     if (typeof window !== 'undefined') {
       window.removeEventListener('subeg-store-update', handleUpdate);
     }
+    unsubFirestore();
   };
 }
 
 export async function fetchProjects(category?: string): Promise<Project[]> {
-  // 1. Authoritative Server Datastore
-  let serverProjects: Project[] | null = null;
+  // 1. Try Firestore first
   try {
-    const res = await fetch('/api/projects', {
-      headers: getAuthHeaders()
-    });
-    if (res.ok) {
-      const fetched = await res.json();
-      if (Array.isArray(fetched)) {
-        serverProjects = fetched;
-        try {
-          localStorage.setItem('subeg_projects_data', JSON.stringify(serverProjects));
-        } catch {}
+    const projectsCol = collection(db, 'projects');
+    const snapshot = await getDocs(projectsCol);
+    if (!snapshot.empty) {
+      const list: Project[] = [];
+      snapshot.forEach((docSnap) => {
+        list.push(docSnap.data() as Project);
+      });
+      list.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+      try {
+        localStorage.setItem('subeg_projects_data', JSON.stringify(list));
+      } catch {}
+      return category && category !== 'ALL'
+        ? list.filter((p) => p.category === category)
+        : list;
+    } else {
+      // Check if DB was initialized
+      const meta = await getDoc(doc(db, 'metadata', 'store_init'));
+      if (meta.exists()) {
+        // 0 projects is authoritative
+        return [];
       }
+      // Seed if not initialized
+      await seedFirestoreIfNeeded();
     }
-  } catch {}
-
-  if (serverProjects !== null && Array.isArray(serverProjects)) {
-    return category && category !== 'ALL'
-      ? serverProjects.filter((p) => p.category === category)
-      : serverProjects;
+  } catch (err) {
+    // Firestore error, fall through to server/localStorage
   }
 
-  // 2. LocalStorage Cache fallback
+  // 2. Server API fallback
   try {
-    const local = localStorage.getItem('subeg_projects_data');
-    if (local !== null) {
-      const parsed = JSON.parse(local);
-      if (Array.isArray(parsed)) {
-        return category && category !== 'ALL'
-          ? parsed.filter((p: Project) => p.category === category)
-          : parsed;
-      }
+    const serverProjects = await fetchFromServer<Project[] | null>('projects', null);
+    if (Array.isArray(serverProjects)) {
+      try {
+        localStorage.setItem('subeg_projects_data', JSON.stringify(serverProjects));
+      } catch {}
+      return category && category !== 'ALL'
+        ? serverProjects.filter((p) => p.category === category)
+        : serverProjects;
     }
   } catch {}
 
-  // 3. Default Seed Projects
+  // 3. LocalStorage fallback
+  const cached = getCachedProjects();
   return category && category !== 'ALL'
-    ? initialProjects.filter((p) => p.category === category)
-    : initialProjects;
+    ? cached.filter((p) => p.category === category)
+    : cached;
 }
 
 export async function fetchProjectByIdOrSlug(idOrSlug: string): Promise<Project> {
@@ -278,8 +377,10 @@ export async function fetchProjectByIdOrSlug(idOrSlug: string): Promise<Project>
   if (found) return found;
 
   try {
-    const proj = await fetchFromServer<Project | null>(`projects/${idOrSlug}`, null);
-    if (proj) return proj;
+    const projSnap = await getDoc(doc(db, 'projects', idOrSlug));
+    if (projSnap.exists()) {
+      return projSnap.data() as Project;
+    }
   } catch {}
 
   throw new Error('Project not found');
@@ -314,7 +415,7 @@ export async function saveProjectApi(project: Partial<Project>): Promise<Project
 
   // 1. Immediately update LocalStorage cache & dispatch broadcast (0ms instant UI update)
   try {
-    const existingList: Project[] = JSON.parse(localStorage.getItem('subeg_projects_data') || '[]');
+    const existingList = [...getCachedProjects()];
     const idx = existingList.findIndex((p) => p.id === id);
     if (idx !== -1) {
       existingList[idx] = fullProject;
@@ -325,53 +426,61 @@ export async function saveProjectApi(project: Partial<Project>): Promise<Project
     broadcastStoreUpdate('projects', existingList);
   } catch {}
 
-  // 2. Persist directly to Express Server Backend JSON Store
+  // 2. Persist to Firestore Cloud Database
+  try {
+    await setDoc(doc(db, 'projects', id), sanitizeForFirestore(fullProject));
+    await setDoc(doc(db, 'metadata', 'store_init'), { initialized: true }, { merge: true });
+  } catch (e) {
+    console.warn('Firestore write warning:', e);
+  }
+
+  // 3. Persist to Express Server Backend if running
   try {
     const isEdit = Boolean(project.id);
     const url = isEdit ? `/api/projects/${id}` : '/api/projects';
     const method = isEdit ? 'PUT' : 'POST';
-    const res = await fetch(url, {
+    await fetch(url, {
       method,
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify(fullProject)
     });
-    if (res.ok) {
-      const savedFromServer = await res.json();
-      return savedFromServer;
-    }
-  } catch (e) {
-    console.warn('Notice saving project to server backend:', e);
-  }
+  } catch {}
 
   return fullProject;
 }
 
 export async function deleteProjectApi(id: string): Promise<void> {
-  // 1. Delete from LocalStorage & broadcast immediately
+  // 1. Delete from LocalStorage & broadcast immediately (0ms instant UI removal)
   try {
-    const existingList: Project[] = JSON.parse(localStorage.getItem('subeg_projects_data') || '[]');
+    const existingList = getCachedProjects();
     const filtered = existingList.filter((p) => p.id !== id);
     localStorage.setItem('subeg_projects_data', JSON.stringify(filtered));
     broadcastStoreUpdate('projects', filtered);
   } catch {}
 
-  // 2. Delete from Server
+  // 2. Delete from Firestore Cloud Database
+  try {
+    await deleteDoc(doc(db, 'projects', id));
+    await setDoc(doc(db, 'metadata', 'store_init'), { initialized: true }, { merge: true });
+  } catch (e) {
+    console.warn('Firestore delete warning:', e);
+  }
+
+  // 3. Delete from Server
   try {
     await fetch(`/api/projects/${id}`, {
       method: 'DELETE',
       credentials: 'include',
       headers: getAuthHeaders()
     });
-  } catch (e) {
-    console.warn('Notice deleting project on server backend:', e);
-  }
+  } catch {}
 }
 
 export async function reorderProjectsApi(projectIds: string[]): Promise<void> {
-  // 1. Update local & broadcast immediately
+  // 1. Update local cache & broadcast immediately
   try {
-    const existingList: Project[] = JSON.parse(localStorage.getItem('subeg_projects_data') || '[]');
+    const existingList = getCachedProjects();
     const projectMap = new Map(existingList.map((p) => [p.id, p]));
     const reordered: Project[] = [];
     projectIds.forEach((id, idx) => {
@@ -383,9 +492,15 @@ export async function reorderProjectsApi(projectIds: string[]): Promise<void> {
     });
     localStorage.setItem('subeg_projects_data', JSON.stringify(reordered));
     broadcastStoreUpdate('projects', reordered);
+
+    // 2. Sync updated sort orders to Firestore
+    for (let idx = 0; idx < projectIds.length; idx++) {
+      const id = projectIds[idx];
+      setDoc(doc(db, 'projects', id), { sortOrder: idx }, { merge: true }).catch(() => {});
+    }
   } catch {}
 
-  // 2. Server reorder
+  // 3. Server reorder
   try {
     await fetch('/api/projects/reorder', {
       method: 'POST',
@@ -393,38 +508,29 @@ export async function reorderProjectsApi(projectIds: string[]): Promise<void> {
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify({ projectIds })
     });
-  } catch (e) {
-    console.warn('Notice reordering on server:', e);
-  }
+  } catch {}
 }
 
 // ==================== ABOUT ====================
 
 export function subscribeAboutData(callback: (about: AboutData) => void): () => void {
+  // 1. Instant local delivery
   try {
     const local = localStorage.getItem('subeg_about_data');
     if (local) {
-      lastAboutJson = local;
-      callback(JSON.parse(local));
+      callback({ ...initialAboutData, ...JSON.parse(local) });
+    } else {
+      callback(initialAboutData);
     }
-  } catch {}
+  } catch {
+    callback(initialAboutData);
+  }
 
-  fetchAboutData().then((data) => {
-    const jsonStr = JSON.stringify(data);
-    if (jsonStr !== lastAboutJson) {
-      lastAboutJson = jsonStr;
-      callback(data);
-    }
-  });
-
+  // 2. Broadcast listener
   const handleUpdate = (e: Event) => {
     const custom = e as CustomEvent;
     if (custom.detail?.type === 'about' && custom.detail?.payload) {
-      const jsonStr = JSON.stringify(custom.detail.payload);
-      if (jsonStr !== lastAboutJson) {
-        lastAboutJson = jsonStr;
-        callback(custom.detail.payload);
-      }
+      callback({ ...initialAboutData, ...custom.detail.payload });
     }
   };
 
@@ -432,29 +538,70 @@ export function subscribeAboutData(callback: (about: AboutData) => void): () => 
     window.addEventListener('subeg-store-update', handleUpdate);
   }
 
+  // 3. Firestore Cloud listener
+  let unsubFirestore = () => {};
+  try {
+    unsubFirestore = onSnapshot(doc(db, 'content', 'about'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data() as AboutData;
+        const merged = { ...initialAboutData, ...data };
+        try {
+          localStorage.setItem('subeg_about_data', JSON.stringify(merged));
+        } catch {}
+        callback(merged);
+      }
+    });
+  } catch {}
+
+  // 4. Server fetch
+  fetchFromServer<AboutData | null>('about', null).then((serverAbout) => {
+    if (serverAbout && (serverAbout.name || serverAbout.introduction)) {
+      const merged = { ...initialAboutData, ...serverAbout };
+      try {
+        localStorage.setItem('subeg_about_data', JSON.stringify(merged));
+      } catch {}
+      callback(merged);
+    }
+  });
+
   return () => {
     if (typeof window !== 'undefined') {
       window.removeEventListener('subeg-store-update', handleUpdate);
     }
+    unsubFirestore();
   };
 }
 
 export async function fetchAboutData(): Promise<AboutData> {
-  // 1. Try Server API first
+  // 1. Try Firestore
   try {
-    const serverAbout = await fetchFromServer<AboutData>('about', initialAboutData);
-    if (serverAbout && (serverAbout.name || serverAbout.introduction)) {
+    const docSnap = await getDoc(doc(db, 'content', 'about'));
+    if (docSnap.exists()) {
+      const data = docSnap.data() as AboutData;
+      const merged = { ...initialAboutData, ...data };
       try {
-        localStorage.setItem('subeg_about_data', JSON.stringify(serverAbout));
+        localStorage.setItem('subeg_about_data', JSON.stringify(merged));
       } catch {}
-      return serverAbout;
+      return merged;
     }
   } catch {}
 
-  // 2. LocalStorage Cache
+  // 2. Try Server API
+  try {
+    const serverAbout = await fetchFromServer<AboutData | null>('about', null);
+    if (serverAbout && (serverAbout.name || serverAbout.introduction)) {
+      const merged = { ...initialAboutData, ...serverAbout };
+      try {
+        localStorage.setItem('subeg_about_data', JSON.stringify(merged));
+      } catch {}
+      return merged;
+    }
+  } catch {}
+
+  // 3. LocalStorage fallback
   try {
     const local = localStorage.getItem('subeg_about_data');
-    if (local) return JSON.parse(local);
+    if (local) return { ...initialAboutData, ...JSON.parse(local) };
   } catch {}
 
   return initialAboutData;
@@ -464,32 +611,34 @@ export async function saveAboutApi(data: Partial<AboutData>): Promise<AboutData>
   let existingAbout: AboutData = initialAboutData;
   try {
     const local = localStorage.getItem('subeg_about_data');
-    if (local) existingAbout = JSON.parse(local);
+    if (local) existingAbout = { ...initialAboutData, ...JSON.parse(local) };
   } catch {}
 
   const updated: AboutData = { ...existingAbout, ...data };
 
-  // 1. Update LocalStorage immediately & broadcast (0ms instant reactivity)
+  // 1. Local cache & broadcast immediately (0ms instant reactivity)
   try {
     localStorage.setItem('subeg_about_data', JSON.stringify(updated));
     broadcastStoreUpdate('about', updated);
   } catch {}
 
-  // 2. Save directly to Server Backend Datastore
+  // 2. Save to Firestore Cloud Database
   try {
-    const res = await fetch('/api/about', {
+    await setDoc(doc(db, 'content', 'about'), sanitizeForFirestore(updated), { merge: true });
+    await setDoc(doc(db, 'metadata', 'store_init'), { initialized: true }, { merge: true });
+  } catch (e) {
+    console.warn('Firestore about save warning:', e);
+  }
+
+  // 3. Save to Server Backend
+  try {
+    await fetch('/api/about', {
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify(updated)
     });
-    if (res.ok) {
-      const serverResult = await res.json();
-      return serverResult;
-    }
-  } catch (e) {
-    console.warn('Notice saving about to server backend:', e);
-  }
+  } catch {}
 
   return updated;
 }
@@ -500,27 +649,18 @@ export function subscribeContactData(callback: (contact: ContactData) => void): 
   try {
     const local = localStorage.getItem('subeg_contact_data');
     if (local) {
-      lastContactJson = local;
-      callback(JSON.parse(local));
+      callback({ ...initialContactData, ...JSON.parse(local) });
+    } else {
+      callback(initialContactData);
     }
-  } catch {}
-
-  fetchContactData().then((data) => {
-    const jsonStr = JSON.stringify(data);
-    if (jsonStr !== lastContactJson) {
-      lastContactJson = jsonStr;
-      callback(data);
-    }
-  });
+  } catch {
+    callback(initialContactData);
+  }
 
   const handleUpdate = (e: Event) => {
     const custom = e as CustomEvent;
     if (custom.detail?.type === 'contact' && custom.detail?.payload) {
-      const jsonStr = JSON.stringify(custom.detail.payload);
-      if (jsonStr !== lastContactJson) {
-        lastContactJson = jsonStr;
-        callback(custom.detail.payload);
-      }
+      callback({ ...initialContactData, ...custom.detail.payload });
     }
   };
 
@@ -528,29 +668,65 @@ export function subscribeContactData(callback: (contact: ContactData) => void): 
     window.addEventListener('subeg-store-update', handleUpdate);
   }
 
+  let unsubFirestore = () => {};
+  try {
+    unsubFirestore = onSnapshot(doc(db, 'content', 'contact'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data() as ContactData;
+        const merged = { ...initialContactData, ...data };
+        try {
+          localStorage.setItem('subeg_contact_data', JSON.stringify(merged));
+        } catch {}
+        callback(merged);
+      }
+    });
+  } catch {}
+
+  fetchFromServer<ContactData | null>('contact', null).then((serverContact) => {
+    if (serverContact && (serverContact.email || serverContact.location)) {
+      const merged = { ...initialContactData, ...serverContact };
+      try {
+        localStorage.setItem('subeg_contact_data', JSON.stringify(merged));
+      } catch {}
+      callback(merged);
+    }
+  });
+
   return () => {
     if (typeof window !== 'undefined') {
       window.removeEventListener('subeg-store-update', handleUpdate);
     }
+    unsubFirestore();
   };
 }
 
 export async function fetchContactData(): Promise<ContactData> {
-  // 1. Try Server API first
   try {
-    const serverContact = await fetchFromServer<ContactData>('contact', initialContactData);
-    if (serverContact && (serverContact.email || serverContact.location)) {
+    const docSnap = await getDoc(doc(db, 'content', 'contact'));
+    if (docSnap.exists()) {
+      const data = docSnap.data() as ContactData;
+      const merged = { ...initialContactData, ...data };
       try {
-        localStorage.setItem('subeg_contact_data', JSON.stringify(serverContact));
+        localStorage.setItem('subeg_contact_data', JSON.stringify(merged));
       } catch {}
-      return serverContact;
+      return merged;
     }
   } catch {}
 
-  // 2. LocalStorage Cache
+  try {
+    const serverContact = await fetchFromServer<ContactData | null>('contact', null);
+    if (serverContact && (serverContact.email || serverContact.location)) {
+      const merged = { ...initialContactData, ...serverContact };
+      try {
+        localStorage.setItem('subeg_contact_data', JSON.stringify(merged));
+      } catch {}
+      return merged;
+    }
+  } catch {}
+
   try {
     const local = localStorage.getItem('subeg_contact_data');
-    if (local) return JSON.parse(local);
+    if (local) return { ...initialContactData, ...JSON.parse(local) };
   } catch {}
 
   return initialContactData;
@@ -560,45 +736,34 @@ export async function saveContactApi(data: Partial<ContactData>): Promise<Contac
   let existingContact: ContactData = initialContactData;
   try {
     const local = localStorage.getItem('subeg_contact_data');
-    if (local) existingContact = JSON.parse(local);
+    if (local) existingContact = { ...initialContactData, ...JSON.parse(local) };
   } catch {}
 
   const updated: ContactData = { ...existingContact, ...data };
 
-  // 1. Update LocalStorage immediately & broadcast (0ms instant reactivity)
+  // 1. Local cache & broadcast immediately
   try {
     localStorage.setItem('subeg_contact_data', JSON.stringify(updated));
     broadcastStoreUpdate('contact', updated);
   } catch {}
 
-  // 2. Save to Server Backend
+  // 2. Firestore Cloud Database
   try {
-    const res = await fetch('/api/contact', {
+    await setDoc(doc(db, 'content', 'contact'), sanitizeForFirestore(updated), { merge: true });
+    await setDoc(doc(db, 'metadata', 'store_init'), { initialized: true }, { merge: true });
+  } catch (e) {
+    console.warn('Firestore contact save warning:', e);
+  }
+
+  // 3. Server Backend
+  try {
+    await fetch('/api/contact', {
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify(updated)
     });
-    if (res.ok) {
-      const savedResult = await res.json();
-      return savedResult;
-    }
-  } catch (e) {
-    console.warn('Notice saving contact to server backend:', e);
-  }
-
-  // 3. Sync siteSettings contactEmail if needed
-  if (data.email) {
-    try {
-      const localStg = localStorage.getItem('subeg_site_settings');
-      if (localStg) {
-        const parsed = JSON.parse(localStg);
-        parsed.contactEmail = data.email;
-        localStorage.setItem('subeg_site_settings', JSON.stringify(parsed));
-        broadcastStoreUpdate('settings', parsed);
-      }
-    } catch {}
-  }
+  } catch {}
 
   return updated;
 }
@@ -609,27 +774,18 @@ export function subscribeSiteSettings(callback: (settings: SiteSettings) => void
   try {
     const local = localStorage.getItem('subeg_site_settings');
     if (local) {
-      lastSettingsJson = local;
-      callback(JSON.parse(local));
+      callback({ ...initialSiteSettings, ...JSON.parse(local) });
+    } else {
+      callback(initialSiteSettings);
     }
-  } catch {}
-
-  fetchSiteSettings().then((data) => {
-    const jsonStr = JSON.stringify(data);
-    if (jsonStr !== lastSettingsJson) {
-      lastSettingsJson = jsonStr;
-      callback(data);
-    }
-  });
+  } catch {
+    callback(initialSiteSettings);
+  }
 
   const handleUpdate = (e: Event) => {
     const custom = e as CustomEvent;
     if (custom.detail?.type === 'settings' && custom.detail?.payload) {
-      const jsonStr = JSON.stringify(custom.detail.payload);
-      if (jsonStr !== lastSettingsJson) {
-        lastSettingsJson = jsonStr;
-        callback(custom.detail.payload);
-      }
+      callback({ ...initialSiteSettings, ...custom.detail.payload });
     }
   };
 
@@ -637,29 +793,65 @@ export function subscribeSiteSettings(callback: (settings: SiteSettings) => void
     window.addEventListener('subeg-store-update', handleUpdate);
   }
 
+  let unsubFirestore = () => {};
+  try {
+    unsubFirestore = onSnapshot(doc(db, 'content', 'settings'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data() as SiteSettings;
+        const merged = { ...initialSiteSettings, ...data };
+        try {
+          localStorage.setItem('subeg_site_settings', JSON.stringify(merged));
+        } catch {}
+        callback(merged);
+      }
+    });
+  } catch {}
+
+  fetchFromServer<SiteSettings | null>('settings', null).then((serverSettings) => {
+    if (serverSettings && serverSettings.siteTitle) {
+      const merged = { ...initialSiteSettings, ...serverSettings };
+      try {
+        localStorage.setItem('subeg_site_settings', JSON.stringify(merged));
+      } catch {}
+      callback(merged);
+    }
+  });
+
   return () => {
     if (typeof window !== 'undefined') {
       window.removeEventListener('subeg-store-update', handleUpdate);
     }
+    unsubFirestore();
   };
 }
 
 export async function fetchSiteSettings(): Promise<SiteSettings> {
-  // 1. Try Server API first
   try {
-    const serverSettings = await fetchFromServer<SiteSettings>('settings', initialSiteSettings);
-    if (serverSettings && serverSettings.siteTitle) {
+    const docSnap = await getDoc(doc(db, 'content', 'settings'));
+    if (docSnap.exists()) {
+      const data = docSnap.data() as SiteSettings;
+      const merged = { ...initialSiteSettings, ...data };
       try {
-        localStorage.setItem('subeg_site_settings', JSON.stringify(serverSettings));
+        localStorage.setItem('subeg_site_settings', JSON.stringify(merged));
       } catch {}
-      return serverSettings;
+      return merged;
     }
   } catch {}
 
-  // 2. LocalStorage Cache
+  try {
+    const serverSettings = await fetchFromServer<SiteSettings | null>('settings', null);
+    if (serverSettings && serverSettings.siteTitle) {
+      const merged = { ...initialSiteSettings, ...serverSettings };
+      try {
+        localStorage.setItem('subeg_site_settings', JSON.stringify(merged));
+      } catch {}
+      return merged;
+    }
+  } catch {}
+
   try {
     const local = localStorage.getItem('subeg_site_settings');
-    if (local) return JSON.parse(local);
+    if (local) return { ...initialSiteSettings, ...JSON.parse(local) };
   } catch {}
 
   return initialSiteSettings;
@@ -669,45 +861,34 @@ export async function saveSettingsApi(data: Partial<SiteSettings>): Promise<Site
   let existingSettings: SiteSettings = initialSiteSettings;
   try {
     const local = localStorage.getItem('subeg_site_settings');
-    if (local) existingSettings = JSON.parse(local);
+    if (local) existingSettings = { ...initialSiteSettings, ...JSON.parse(local) };
   } catch {}
 
   const updated: SiteSettings = { ...existingSettings, ...data };
 
-  // 1. Update LocalStorage immediately & broadcast (0ms instant reactivity)
+  // 1. Local cache & broadcast immediately
   try {
     localStorage.setItem('subeg_site_settings', JSON.stringify(updated));
     broadcastStoreUpdate('settings', updated);
   } catch {}
 
-  // 2. Save to Server Backend
+  // 2. Firestore Cloud Database
   try {
-    const res = await fetch('/api/settings', {
+    await setDoc(doc(db, 'content', 'settings'), sanitizeForFirestore(updated), { merge: true });
+    await setDoc(doc(db, 'metadata', 'store_init'), { initialized: true }, { merge: true });
+  } catch (e) {
+    console.warn('Firestore settings save warning:', e);
+  }
+
+  // 3. Server Backend
+  try {
+    await fetch('/api/settings', {
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify(updated)
     });
-    if (res.ok) {
-      const savedRes = await res.json();
-      return savedRes;
-    }
-  } catch (e) {
-    console.warn('Notice saving settings to server backend:', e);
-  }
-
-  // 3. Keep contact email in sync if contactEmail changed
-  if (data.contactEmail) {
-    try {
-      const localCnt = localStorage.getItem('subeg_contact_data');
-      if (localCnt) {
-        const parsed = JSON.parse(localCnt);
-        parsed.email = data.contactEmail;
-        localStorage.setItem('subeg_contact_data', JSON.stringify(parsed));
-        broadcastStoreUpdate('contact', parsed);
-      }
-    } catch {}
-  }
+  } catch {}
 
   return updated;
 }
@@ -715,7 +896,22 @@ export async function saveSettingsApi(data: Partial<SiteSettings>): Promise<Site
 // ==================== MEDIA ====================
 
 export async function fetchMediaApi(): Promise<MediaItem[]> {
-  // 1. Try Server API first
+  // 1. Try Firestore
+  try {
+    const mediaCol = collection(db, 'media');
+    const snapshot = await getDocs(mediaCol);
+    if (!snapshot.empty) {
+      const list: MediaItem[] = [];
+      snapshot.forEach((docSnap) => list.push(docSnap.data() as MediaItem));
+      list.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+      try {
+        localStorage.setItem('subeg_media_items', JSON.stringify(list));
+      } catch {}
+      return list;
+    }
+  } catch {}
+
+  // 2. Try Server API
   try {
     const serverMedia = await fetchFromServer<MediaItem[]>('media', []);
     if (serverMedia && serverMedia.length > 0) {
@@ -726,7 +922,7 @@ export async function fetchMediaApi(): Promise<MediaItem[]> {
     }
   } catch {}
 
-  // 2. Fallback to LocalStorage
+  // 3. LocalStorage fallback
   const local = localStorage.getItem('subeg_media_items');
   return local ? JSON.parse(local) : [];
 }
@@ -737,7 +933,7 @@ export async function uploadMediaApi(file: File): Promise<MediaItem> {
 
   let finalUrl = dataUrl;
 
-  // 1. Upload to Server (which automatically uploads to Cloudinary or disk)
+  // 1. Upload to Server (if available)
   try {
     const formData = new FormData();
     formData.append('file', file);
@@ -753,9 +949,7 @@ export async function uploadMediaApi(file: File): Promise<MediaItem> {
         finalUrl = serverItem.url;
       }
     }
-  } catch (e) {
-    console.warn('Notice on server media upload:', e);
-  }
+  } catch {}
 
   const mediaItem: MediaItem = {
     id: mediaId,
@@ -767,7 +961,12 @@ export async function uploadMediaApi(file: File): Promise<MediaItem> {
     size: file.size
   };
 
-  // 2. LocalStorage cache & broadcast
+  // 2. Save to Firestore
+  try {
+    await setDoc(doc(db, 'media', mediaId), sanitizeForFirestore(mediaItem));
+  } catch {}
+
+  // 3. LocalStorage cache & broadcast
   try {
     const existing: MediaItem[] = JSON.parse(localStorage.getItem('subeg_media_items') || '[]');
     existing.unshift(mediaItem);
@@ -780,6 +979,11 @@ export async function uploadMediaApi(file: File): Promise<MediaItem> {
 }
 
 export async function deleteMediaApi(filenameOrId: string): Promise<void> {
+  // Delete from Firestore
+  try {
+    await deleteDoc(doc(db, 'media', filenameOrId));
+  } catch {}
+
   // Delete from Server
   try {
     await fetch(`/api/media/${filenameOrId}`, {
@@ -939,9 +1143,27 @@ export async function resetDemoDataApi(): Promise<void> {
     });
   } catch {}
 
+  // Reset Firestore to initial seed
+  try {
+    const projSnap = await getDocs(collection(db, 'projects'));
+    for (const d of projSnap.docs) {
+      await deleteDoc(d.ref);
+    }
+    for (const p of initialProjects) {
+      await setDoc(doc(db, 'projects', p.id), sanitizeForFirestore(p));
+    }
+    await setDoc(doc(db, 'content', 'about'), sanitizeForFirestore(initialAboutData));
+    await setDoc(doc(db, 'content', 'contact'), sanitizeForFirestore(initialContactData));
+    await setDoc(doc(db, 'content', 'settings'), sanitizeForFirestore(initialSiteSettings));
+  } catch {}
+
   localStorage.removeItem('subeg_projects_data');
   localStorage.removeItem('subeg_about_data');
   localStorage.removeItem('subeg_contact_data');
   localStorage.removeItem('subeg_site_settings');
   localStorage.removeItem('subeg_media_items');
+  broadcastStoreUpdate('projects', initialProjects);
+  broadcastStoreUpdate('about', initialAboutData);
+  broadcastStoreUpdate('contact', initialContactData);
+  broadcastStoreUpdate('settings', initialSiteSettings);
 }
