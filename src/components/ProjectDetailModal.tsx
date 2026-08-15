@@ -122,13 +122,83 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
           </div>
         </div>
 
-        {/* Project Documentation & Media Gallery (Cinematic stage with interactive Fullscreen Lightbox) */}
-        {allMediaItems.length > 0 && (
-          <ProjectGalleryCarousel
-            projectTitle={project.title}
-            items={allMediaItems}
-          />
-        )}
+        {/* Media Presentation Section (Video Stream first if active, followed by Photo Carousel) */}
+        {(() => {
+          const hasVideoStream = Boolean(project.enableStreaming && project.videoStreamUrl);
+          const parsedVideo = hasVideoStream ? parseVideoUrl(project.videoStreamUrl) : null;
+          const isVideoValid = parsedVideo && parsedVideo.type !== 'invalid';
+
+          return (
+            <div className="space-y-12" id="project-media-showcase">
+              {/* 1. Cinematic Video Stream (Displayed at top when available) */}
+              {isVideoValid && parsedVideo && (
+                <div className="space-y-4" id="project-video-stream-section">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-800/80 pb-2.5 font-mono text-xs">
+                    <div className="flex items-center space-x-2.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-pulse" />
+                      <h3 className="font-mono text-xs uppercase tracking-widest text-teal-300 font-bold">
+                        Cinematic Video Stream
+                      </h3>
+                      {parsedVideo.type === 'vimeo' && (
+                        <span className="px-2 py-0.5 bg-neutral-900 border border-teal-500/30 text-teal-400 text-[10px] font-mono font-semibold">
+                          VIMEO HD
+                        </span>
+                      )}
+                      {parsedVideo.type === 'youtube' && (
+                        <span className="px-2 py-0.5 bg-neutral-900 border border-teal-500/30 text-teal-400 text-[10px] font-mono font-semibold">
+                          YOUTUBE 4K
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="font-mono text-[10px] text-neutral-400 bg-neutral-900 border border-neutral-800 px-2.5 py-1 uppercase tracking-wider">
+                        Main Case Study Video
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Cinematic Video Player Container */}
+                  <div className="relative rounded-none overflow-hidden bg-neutral-950 border border-teal-500/30 shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_30px_rgba(20,184,166,0.12)] group">
+                    {/* Corner Crosshairs */}
+                    <span className="absolute top-2 left-2 font-mono text-[10px] text-teal-400/60 z-20 select-none pointer-events-none">+</span>
+                    <span className="absolute top-2 right-2 font-mono text-[10px] text-teal-400/60 z-20 select-none pointer-events-none">+</span>
+                    <span className="absolute bottom-2 left-2 font-mono text-[10px] text-teal-400/60 z-20 select-none pointer-events-none">+</span>
+                    <span className="absolute bottom-2 right-2 font-mono text-[10px] text-teal-400/60 z-20 select-none pointer-events-none">+</span>
+
+                    <div className="relative w-full aspect-video bg-neutral-950">
+                      {parsedVideo.type === 'direct' ? (
+                        <video
+                          src={parsedVideo.embedUrl}
+                          controls
+                          playsInline
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <iframe
+                          src={parsedVideo.embedUrl}
+                          className="w-full h-full border-0"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                          allowFullScreen
+                          title={`${project.title} Video Stream`}
+                        />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 2. Photo Documentation Gallery (Moves below the video if video is present) */}
+              {allMediaItems.length > 0 && (
+                <div className={isVideoValid ? 'pt-4' : ''}>
+                  <ProjectGalleryCarousel
+                    projectTitle={project.title}
+                    items={allMediaItems}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Case Study Overview & Long Description */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-12 pt-6">
@@ -196,75 +266,30 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
           </div>
         </div>
 
-        {/* Dedicated Cinematic Video Stream Section (Activated only when enabled and link provided) */}
-        {project.enableStreaming && project.videoStreamUrl && (() => {
-          const parsed = parseVideoUrl(project.videoStreamUrl);
-          if (parsed.type === 'invalid') return null;
-
-          return (
-            <div className="space-y-6 pt-12 border-t border-neutral-800/80" id="project-video-stream-section">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center space-x-3">
-                  <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-pulse" />
-                  <h3 className="font-mono text-xs uppercase tracking-widest text-teal-300 font-bold">
-                    Cinematic Documentation Stream
-                  </h3>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className="font-mono text-[10px] text-white/50 bg-neutral-900 border border-white/10 px-3 py-1 uppercase tracking-wider">
-                    {parsed.type.toUpperCase()} 4K PLAYBACK
-                  </span>
-                </div>
-              </div>
-
-              {/* Cinematic Video Player Container */}
-              <div className="relative rounded-sm overflow-hidden bg-neutral-950 border border-teal-500/30 shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_30px_rgba(20,184,166,0.15)] group">
-                {/* Crosshairs */}
-                <span className="absolute top-2 left-2 font-mono text-[10px] text-teal-400/60 z-20 select-none pointer-events-none">+</span>
-                <span className="absolute top-2 right-2 font-mono text-[10px] text-teal-400/60 z-20 select-none pointer-events-none">+</span>
-                <span className="absolute bottom-2 left-2 font-mono text-[10px] text-teal-400/60 z-20 select-none pointer-events-none">+</span>
-                <span className="absolute bottom-2 right-2 font-mono text-[10px] text-teal-400/60 z-20 select-none pointer-events-none">+</span>
-
-                <div className="relative w-full aspect-video bg-neutral-950">
-                  {parsed.type === 'direct' ? (
-                    <video
-                      src={parsed.embedUrl}
-                      controls
-                      playsInline
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <iframe
-                      src={parsed.embedUrl}
-                      className="w-full h-full border-0"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                      allowFullScreen
-                      title={`${project.title} Video Stream`}
-                    />
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Video Embeds if any */}
+        {/* Additional Video Embeds if any */}
         {project.videos && project.videos.length > 0 && (
           <div className="space-y-6 pt-12 border-t border-neutral-800/80">
             <h3 className="font-mono text-xs uppercase tracking-widest text-neutral-400">
-              Motion & Documentation Video Stream
+              Additional Motion & Documentation Video Streams
             </h3>
             <div className="space-y-6">
-              {project.videos.map((videoUrl, idx) => (
-                <div key={idx} className="aspect-video bg-neutral-900 border border-neutral-800 overflow-hidden">
-                  <iframe
-                    src={videoUrl}
-                    className="w-full h-full"
-                    allowFullScreen
-                    title={`${project.title} Video ${idx + 1}`}
-                  />
-                </div>
-              ))}
+              {project.videos.map((videoUrl, idx) => {
+                const parsed = parseVideoUrl(videoUrl);
+                return (
+                  <div key={idx} className="aspect-video bg-neutral-900 border border-neutral-800 overflow-hidden">
+                    {parsed.type === 'direct' ? (
+                      <video src={parsed.embedUrl} controls className="w-full h-full object-cover" />
+                    ) : (
+                      <iframe
+                        src={parsed.embedUrl || videoUrl}
+                        className="w-full h-full border-0"
+                        allowFullScreen
+                        title={`${project.title} Video ${idx + 1}`}
+                      />
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

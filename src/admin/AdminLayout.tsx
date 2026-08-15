@@ -9,7 +9,8 @@ import {
   Mail,
   Settings,
   LogOut,
-  Eye
+  Eye,
+  Sliders
 } from 'lucide-react';
 
 export type AdminTab =
@@ -19,6 +20,7 @@ export type AdminTab =
   | 'ABOUT'
   | 'CV'
   | 'CONTACT'
+  | 'SOFTWARE'
   | 'SETTINGS';
 
 interface AdminLayoutProps {
@@ -33,6 +35,7 @@ const TABS: { id: AdminTab; label: string; icon: React.FC<{ className?: string }
   { id: 'DASHBOARD', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'PROJECTS', label: 'Projects', icon: FolderKanban },
   { id: 'MEDIA', label: 'Media Library', icon: ImageIcon },
+  { id: 'SOFTWARE', label: 'Software Toolkit', icon: Sliders },
   { id: 'ABOUT', label: 'About', icon: User },
   { id: 'CV', label: 'CV Manager', icon: FileText },
   { id: 'CONTACT', label: 'Contact', icon: Mail },

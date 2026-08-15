@@ -18,6 +18,7 @@ import { AboutSection } from './components/AboutSection';
 import { ProjectionDesignSection } from './components/ProjectionDesignSection';
 import { ImmersiveMediaSection } from './components/ImmersiveMediaSection';
 import { ContactSection } from './components/ContactSection';
+import { SoftwareTickerSection } from './components/SoftwareTickerSection';
 import { Footer } from './components/Footer';
 import { ProjectDetailModal } from './components/ProjectDetailModal';
 import { ProjectHoverPreview } from './components/ProjectHoverPreview';
@@ -32,6 +33,7 @@ import { AdminMediaLibrary } from './admin/AdminMediaLibrary';
 import { AdminAboutEditor } from './admin/AdminAboutEditor';
 import { AdminCVManager } from './admin/AdminCVManager';
 import { AdminContactEditor } from './admin/AdminContactEditor';
+import { AdminSoftwareEditor } from './admin/AdminSoftwareEditor';
 import { AdminSettings } from './admin/AdminSettings';
 
 import { initialAboutData, initialContactData, initialProjects, initialSiteSettings } from './data/initial-store';
@@ -301,6 +303,7 @@ export default function App() {
             {adminTab === 'CONTACT' && contact && (
               <AdminContactEditor contact={contact} onRefreshContact={loadPublicData} />
             )}
+            {adminTab === 'SOFTWARE' && <AdminSoftwareEditor />}
             {adminTab === 'SETTINGS' && settings && (
               <AdminSettings
                 settings={settings}
@@ -380,6 +383,9 @@ export default function App() {
           </AnimatePresence>
         )}
       </main>
+
+      {/* Bottom Horizontal Software Stack Ticker (Left to Right Loop) */}
+      {!loading && <SoftwareTickerSection />}
 
       {/* Global Site Footer with Admin Login at bottom */}
       {!loading && about && (

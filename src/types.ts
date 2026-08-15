@@ -67,4 +67,18 @@ export interface SiteSettings {
   adminPasswordInfo: string;
 }
 
+export interface SoftwareTool {
+  id: string;
+  name: string;
+  category: string;
+  color?: string;
+  accentBg?: string;
+  borderColor?: string;
+  customIconUrl?: string;
+  customSvgCode?: string;
+  sortOrder: number;
+  enabled: boolean;
+}
+
 export type PublicNavSection = 'ABOUT' | 'PROJECTION DESIGN' | 'IMMERSIVE MEDIA' | 'CONTACT';
+

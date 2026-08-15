@@ -435,7 +435,7 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
           </div>
         </div>
 
-        {/* Video Streaming (YouTube / Vimeo) Section */}
+        {/* Video Streaming (Vimeo Embed Code / YouTube / Direct) Section */}
         <div className="bg-neutral-900/60 p-6 border border-neutral-800 space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-800 pb-4">
             <div className="flex items-center space-x-3">
@@ -444,10 +444,10 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
               </div>
               <div>
                 <h3 className="font-syne font-bold text-sm text-neutral-100 uppercase">
-                  Cinematic Video Stream (YouTube / Vimeo)
+                  Cinematic Video Stream (Vimeo / YouTube)
                 </h3>
                 <p className="font-mono text-[11px] text-neutral-400">
-                  Embed full high-definition video player for live case studies and documentation
+                  Paste full Vimeo embed code (<code className="text-teal-300">&lt;iframe...&gt;</code>) or video URL. If present, the video player displays first and the photo carousel moves below it.
                 </p>
               </div>
             </div>
@@ -469,22 +469,42 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <label className="block text-neutral-400 uppercase">
-                Video Link (YouTube URL or Vimeo URL)
-              </label>
-              <input
-                type="text"
+              <div className="flex items-center justify-between">
+                <label className="block text-neutral-300 font-bold uppercase">
+                  Vimeo Embed Code or Video URL
+                </label>
+                {videoStreamUrl && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVideoStreamUrl('');
+                      setEnableStreaming(false);
+                    }}
+                    className="text-neutral-500 hover:text-red-400 text-[10px] uppercase font-mono"
+                  >
+                    Clear Video
+                  </button>
+                )}
+              </div>
+              <textarea
                 value={videoStreamUrl}
-                onChange={e => setVideoStreamUrl(e.target.value)}
-                placeholder="e.g. https://vimeo.com/76979871 or https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-                className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 focus:outline-none focus:border-teal-500 font-mono text-xs"
+                onChange={e => {
+                  const val = e.target.value;
+                  setVideoStreamUrl(val);
+                  if (val.trim().length > 0 && !enableStreaming) {
+                    setEnableStreaming(true);
+                  }
+                }}
+                rows={videoStreamUrl.includes('<iframe') ? 3 : 2}
+                placeholder='Paste Vimeo Embed Code (e.g. <iframe src="https://player.vimeo.com/video/..." ...></iframe>) or Vimeo / YouTube URL (e.g. https://vimeo.com/76979871)'
+                className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 text-neutral-100 focus:outline-none focus:border-teal-500 font-mono text-xs leading-relaxed"
               />
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10px] text-neutral-400">
-                <span>Supported: Vimeo URLs, YouTube URLs, YouTube Shorts, or direct video streams</span>
+              <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-[10px] text-neutral-400">
+                <span>Accepts raw Vimeo embed HTML code, unlisted Vimeo links with privacy tokens, YouTube URLs, or direct .mp4 streams.</span>
                 {videoStreamUrl && enableStreaming && (
                   <span className="text-teal-400 font-bold flex items-center space-x-1">
                     <span>&bull;</span>
-                    <span>Ready for case study streaming</span>
+                    <span>Video active &bull; Photo carousel will appear below video</span>
                   </span>
                 )}
               </div>
@@ -492,36 +512,52 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
 
             {/* Live Video Preview in Admin */}
             {videoStreamUrl && (
-              <div className="pt-2">
-                <span className="font-mono text-[10px] uppercase tracking-wider text-neutral-400 block mb-2">
-                  Live Video Stream Embed Preview:
-                </span>
+              <div className="pt-2 space-y-3">
                 {(() => {
                   const parsed = parseVideoUrl(videoStreamUrl);
                   if (parsed.type === 'invalid') {
                     return (
                       <div className="p-3 bg-amber-950/40 border border-amber-800/60 text-amber-300 font-mono text-xs">
-                        Warning: Unable to parse video URL. Please provide a valid YouTube (youtube.com / youtu.be) or Vimeo (vimeo.com) link.
+                        Warning: Unable to parse video URL. Please provide a valid Vimeo embed code, Vimeo link (e.g. vimeo.com/12345), or YouTube link.
                       </div>
                     );
                   }
+
                   return (
-                    <div className="relative aspect-video w-full max-w-2xl bg-neutral-950 border border-teal-500/30 overflow-hidden shadow-xl">
-                      {parsed.type === 'direct' ? (
-                        <video
-                          src={parsed.embedUrl}
-                          controls
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <iframe
-                          src={parsed.embedUrl}
-                          className="w-full h-full border-0"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                          allowFullScreen
-                          title="Video Stream Preview"
-                        />
-                      )}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-mono text-[10px] uppercase tracking-wider text-neutral-400">
+                            Parsed Stream:
+                          </span>
+                          <span className="px-2 py-0.5 bg-teal-950/60 border border-teal-500/40 text-teal-300 text-[10px] font-mono font-bold uppercase">
+                            {parsed.type} {parsed.videoId ? `(ID: ${parsed.videoId})` : ''}
+                            {parsed.privacyHash ? ' [Privacy Token]' : ''}
+                            {parsed.isEmbedCode ? ' [Embed Code Extracted]' : ''}
+                          </span>
+                        </div>
+                        <span className="font-mono text-[10px] text-neutral-500">
+                          {enableStreaming ? '✓ Will display at top of case study' : '⚠ Toggle Streaming Activated to display'}
+                        </span>
+                      </div>
+
+                      <div className="relative aspect-video w-full max-w-2xl bg-neutral-950 border border-teal-500/30 overflow-hidden shadow-xl">
+                        {parsed.type === 'direct' ? (
+                          <video
+                            src={parsed.embedUrl}
+                            controls
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <iframe
+                            src={parsed.embedUrl}
+                            className="w-full h-full border-0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                            title="Video Stream Preview"
+                          />
+                        )}
+                      </div>
                     </div>
                   );
                 })()}

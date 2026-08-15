@@ -1,7 +1,7 @@
 import React from 'react';
 import { Project } from '../types';
 import { AdminTab } from './AdminLayout';
-import { Plus, FolderKanban, Image, User, CheckCircle2, Clock } from 'lucide-react';
+import { Plus, FolderKanban, Image, User, CheckCircle2, Clock, Sliders } from 'lucide-react';
 
 interface AdminDashboardProps {
   projects: Project[];
@@ -69,14 +69,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </div>
 
       {/* Quick Action Shortcuts */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <button
           onClick={() => onSelectTab('PROJECTS')}
           className="p-5 bg-neutral-900/50 border border-neutral-800 hover:border-neutral-700 text-left transition-colors group flex items-center justify-between"
         >
           <div className="space-y-1">
             <span className="font-mono text-xs text-neutral-400 uppercase block">Manage Projects</span>
-            <span className="font-syne font-bold text-neutral-200 group-hover:text-white">Project List & Reordering</span>
+            <span className="font-syne font-bold text-neutral-200 group-hover:text-white">Project List & Order</span>
           </div>
           <FolderKanban className="w-5 h-5 text-neutral-500 group-hover:text-neutral-200" />
         </button>
@@ -87,9 +87,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         >
           <div className="space-y-1">
             <span className="font-mono text-xs text-neutral-400 uppercase block">Media Library</span>
-            <span className="font-syne font-bold text-neutral-200 group-hover:text-white">Upload Images & Videos</span>
+            <span className="font-syne font-bold text-neutral-200 group-hover:text-white">Upload Media Assets</span>
           </div>
           <Image className="w-5 h-5 text-neutral-500 group-hover:text-neutral-200" />
+        </button>
+
+        <button
+          onClick={() => onSelectTab('SOFTWARE')}
+          className="p-5 bg-neutral-900/50 border border-neutral-800 hover:border-neutral-700 text-left transition-colors group flex items-center justify-between"
+        >
+          <div className="space-y-1">
+            <span className="font-mono text-xs text-teal-400 uppercase block">Software Toolkit</span>
+            <span className="font-syne font-bold text-neutral-200 group-hover:text-white">Logos, SVGs & Ticker</span>
+          </div>
+          <Sliders className="w-5 h-5 text-teal-500 group-hover:text-teal-300" />
         </button>
 
         <button
@@ -98,7 +109,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         >
           <div className="space-y-1">
             <span className="font-mono text-xs text-neutral-400 uppercase block">About & Bio</span>
-            <span className="font-syne font-bold text-neutral-200 group-hover:text-white">Edit Practice Description</span>
+            <span className="font-syne font-bold text-neutral-200 group-hover:text-white">Practice & Statement</span>
           </div>
           <User className="w-5 h-5 text-neutral-500 group-hover:text-neutral-200" />
         </button>

@@ -6,8 +6,8 @@ import multer from 'multer';
 import dotenv from 'dotenv';
 import { v2 as cloudinary } from 'cloudinary';
 import { createServer as createViteServer } from 'vite';
-import { initialAboutData, initialContactData, initialProjects, initialSiteSettings } from './src/data/initial-store';
-import { AboutData, ContactData, MediaItem, Project, SiteSettings } from './src/types';
+import { initialAboutData, initialContactData, initialProjects, initialSiteSettings, initialSoftwareTools } from './src/data/initial-store';
+import { AboutData, ContactData, MediaItem, Project, SiteSettings, SoftwareTool } from './src/types';
 
 dotenv.config();
 
@@ -30,6 +30,7 @@ interface StoreSchema {
   settings: SiteSettings;
   projects: Project[];
   media: MediaItem[];
+  software: SoftwareTool[];
 }
 
 function loadStore(): StoreSchema {
@@ -42,7 +43,8 @@ function loadStore(): StoreSchema {
         contact: parsed.contact || initialContactData,
         settings: parsed.settings || initialSiteSettings,
         projects: parsed.projects || initialProjects,
-        media: parsed.media || []
+        media: parsed.media || [],
+        software: parsed.software || initialSoftwareTools
       };
     }
   } catch (err) {
@@ -54,7 +56,8 @@ function loadStore(): StoreSchema {
     contact: initialContactData,
     settings: initialSiteSettings,
     projects: initialProjects,
-    media: []
+    media: [],
+    software: initialSoftwareTools
   };
 
   saveStore(defaultStore);
@@ -377,13 +380,29 @@ async function startServer() {
     res.json(currentStore.settings);
   });
 
+  // --- SOFTWARE TOOLKIT API ---
+  app.get('/api/software', (_req, res) => {
+    res.json(currentStore.software || initialSoftwareTools);
+  });
+
+  app.put('/api/software', requireAdmin, (req, res) => {
+    if (Array.isArray(req.body)) {
+      currentStore.software = req.body;
+      saveStore(currentStore);
+      res.json(currentStore.software);
+    } else {
+      res.status(400).json({ error: 'Software array required' });
+    }
+  });
+
   app.post('/api/settings/reset-demo', requireAdmin, (_req, res) => {
     currentStore = {
       about: initialAboutData,
       contact: initialContactData,
       settings: initialSiteSettings,
       projects: initialProjects,
-      media: []
+      media: [],
+      software: initialSoftwareTools
     };
     saveStore(currentStore);
     res.json({ success: true, store: currentStore });
@@ -407,6 +426,7 @@ async function startServer() {
     if (incomingStore.settings) currentStore.settings = incomingStore.settings;
     if (Array.isArray(incomingStore.projects)) currentStore.projects = incomingStore.projects;
     if (Array.isArray(incomingStore.media)) currentStore.media = incomingStore.media;
+    if (Array.isArray(incomingStore.software)) currentStore.software = incomingStore.software;
 
     saveStore(currentStore);
     res.json({ success: true, store: currentStore });

@@ -1,4 +1,107 @@
-import { AboutData, ContactData, Project, SiteSettings } from '../types';
+import { AboutData, ContactData, Project, SiteSettings, SoftwareTool } from '../types';
+
+export const initialSoftwareTools: SoftwareTool[] = [
+  {
+    id: 'unreal-engine',
+    name: 'Unreal Engine',
+    category: 'Real-Time 3D & Virtual Prod',
+    color: '#FFFFFF',
+    accentBg: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    sortOrder: 1,
+    enabled: true
+  },
+  {
+    id: 'after-effects',
+    name: 'After Effects',
+    category: 'Motion Design & VFX',
+    color: '#9999FF',
+    accentBg: 'rgba(153, 153, 255, 0.12)',
+    borderColor: 'rgba(153, 153, 255, 0.4)',
+    sortOrder: 2,
+    enabled: true
+  },
+  {
+    id: 'photoshop',
+    name: 'Photoshop',
+    category: 'Texture & Matte Painting',
+    color: '#31A8FF',
+    accentBg: 'rgba(49, 168, 255, 0.12)',
+    borderColor: 'rgba(49, 168, 255, 0.4)',
+    sortOrder: 3,
+    enabled: true
+  },
+  {
+    id: '3ds-max',
+    name: '3ds Max',
+    category: '3D Modeling & Scenography',
+    color: '#0696D7',
+    accentBg: 'rgba(6, 150, 215, 0.12)',
+    borderColor: 'rgba(6, 150, 215, 0.4)',
+    sortOrder: 4,
+    enabled: true
+  },
+  {
+    id: 'v-ray',
+    name: 'V-Ray',
+    category: 'Photorealistic Rendering',
+    color: '#FF1844',
+    accentBg: 'rgba(255, 24, 68, 0.12)',
+    borderColor: 'rgba(255, 24, 68, 0.4)',
+    sortOrder: 5,
+    enabled: true
+  },
+  {
+    id: 'lumion',
+    name: 'Lumion',
+    category: 'Architectural Previz',
+    color: '#00A3E0',
+    accentBg: 'rgba(0, 163, 224, 0.12)',
+    borderColor: 'rgba(0, 163, 224, 0.4)',
+    sortOrder: 6,
+    enabled: true
+  },
+  {
+    id: 'premiere-pro',
+    name: 'Premiere Pro',
+    category: 'Video Editing & Timeline',
+    color: '#EA77FF',
+    accentBg: 'rgba(234, 119, 255, 0.12)',
+    borderColor: 'rgba(234, 119, 255, 0.4)',
+    sortOrder: 7,
+    enabled: true
+  },
+  {
+    id: 'autocad',
+    name: 'AutoCAD',
+    category: 'Spatial Drafting & Rig Plans',
+    color: '#E51937',
+    accentBg: 'rgba(229, 25, 55, 0.12)',
+    borderColor: 'rgba(229, 25, 55, 0.4)',
+    sortOrder: 8,
+    enabled: true
+  },
+  {
+    id: 'resolume-arena',
+    name: 'Resolume Arena',
+    category: 'Live Projection Mapping & Media Server',
+    color: '#00FF99',
+    accentBg: 'rgba(0, 255, 153, 0.12)',
+    borderColor: 'rgba(0, 255, 153, 0.4)',
+    sortOrder: 9,
+    enabled: true
+  },
+  {
+    id: 'corel-draw',
+    name: 'CorelDRAW',
+    category: 'Vector Graphics & Stencils',
+    color: '#65C227',
+    accentBg: 'rgba(101, 194, 39, 0.12)',
+    borderColor: 'rgba(101, 194, 39, 0.4)',
+    sortOrder: 10,
+    enabled: true
+  }
+];
 
 export const initialAboutData: AboutData = {
   name: "SUBEG SINGH",

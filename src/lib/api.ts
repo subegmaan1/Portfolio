@@ -1,5 +1,5 @@
-import { AboutData, ContactData, MediaItem, Project, SiteSettings } from '../types';
-import { initialAboutData, initialContactData, initialProjects, initialSiteSettings } from '../data/initial-store';
+import { AboutData, ContactData, MediaItem, Project, SiteSettings, SoftwareTool } from '../types';
+import { initialAboutData, initialContactData, initialProjects, initialSiteSettings, initialSoftwareTools } from '../data/initial-store';
 import { db } from './firebase';
 import {
   collection,
@@ -45,7 +45,7 @@ function getAuthHeaders(): Record<string, string> {
 }
 
 // Global broadcast event for 0ms cross-component UI updates
-function broadcastStoreUpdate(type: 'projects' | 'about' | 'contact' | 'settings' | 'media', payload: any) {
+function broadcastStoreUpdate(type: 'projects' | 'about' | 'contact' | 'settings' | 'media' | 'software', payload: any) {
   if (typeof window !== 'undefined') {
     try {
       window.dispatchEvent(new CustomEvent('subeg-store-update', { detail: { type, payload } }));
@@ -891,6 +891,123 @@ export async function saveSettingsApi(data: Partial<SiteSettings>): Promise<Site
   } catch {}
 
   return updated;
+}
+
+// ==================== SOFTWARE TOOLKIT ====================
+
+export function subscribeSoftwareTools(callback: (tools: SoftwareTool[]) => void): () => void {
+  // 1. Local Cache
+  try {
+    const local = localStorage.getItem('subeg_software_tools');
+    if (local) {
+      const parsed = JSON.parse(local);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        callback(parsed);
+      } else {
+        callback(initialSoftwareTools);
+      }
+    } else {
+      callback(initialSoftwareTools);
+    }
+  } catch {
+    callback(initialSoftwareTools);
+  }
+
+  // 2. Broadcast events
+  const handleUpdate = (e: Event) => {
+    const custom = e as CustomEvent;
+    if (custom.detail?.type === 'software' && Array.isArray(custom.detail?.payload)) {
+      callback(custom.detail.payload);
+    }
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('subeg-store-update', handleUpdate);
+  }
+
+  // 3. Real-time Firestore Cloud Subscription
+  let unsubFirestore = () => {};
+  try {
+    const softwareDocRef = doc(db, 'content', 'software');
+    unsubFirestore = onSnapshot(softwareDocRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (Array.isArray(data?.tools)) {
+          const sorted = [...data.tools].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+          try {
+            localStorage.setItem('subeg_software_tools', JSON.stringify(sorted));
+          } catch {}
+          callback(sorted);
+          return;
+        }
+      }
+      // If doc doesn't exist yet, seed initialSoftwareTools
+      setDoc(softwareDocRef, { tools: sanitizeForFirestore(initialSoftwareTools) }, { merge: true }).catch(() => {});
+      callback(initialSoftwareTools);
+    }, (err) => {
+      console.warn('Firestore software subscription warning:', err);
+    });
+  } catch {}
+
+  return () => {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('subeg-store-update', handleUpdate);
+    }
+    unsubFirestore();
+  };
+}
+
+export async function fetchSoftwareTools(): Promise<SoftwareTool[]> {
+  try {
+    const snap = await getDoc(doc(db, 'content', 'software'));
+    if (snap.exists()) {
+      const data = snap.data();
+      if (Array.isArray(data?.tools)) {
+        const sorted = [...data.tools].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+        try {
+          localStorage.setItem('subeg_software_tools', JSON.stringify(sorted));
+        } catch {}
+        return sorted;
+      }
+    }
+  } catch {}
+
+  try {
+    const local = localStorage.getItem('subeg_software_tools');
+    if (local) {
+      const parsed = JSON.parse(local);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+
+  return initialSoftwareTools;
+}
+
+export async function saveSoftwareToolsApi(tools: SoftwareTool[]): Promise<SoftwareTool[]> {
+  const sorted = [...tools].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+
+  // 1. Local cache & broadcast immediately
+  try {
+    localStorage.setItem('subeg_software_tools', JSON.stringify(sorted));
+    broadcastStoreUpdate('software', sorted);
+  } catch {}
+
+  // 2. Firestore Cloud Database
+  try {
+    await setDoc(doc(db, 'content', 'software'), {
+      tools: sanitizeForFirestore(sorted),
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+    await setDoc(doc(db, 'metadata', 'store_init'), { initialized: true }, { merge: true });
+  } catch (e) {
+    console.warn('Firestore software save warning:', e);
+  }
+
+  return sorted;
+}
+
+export async function resetSoftwareToolsApi(): Promise<SoftwareTool[]> {
+  return await saveSoftwareToolsApi(initialSoftwareTools);
 }
 
 // ==================== MEDIA ====================
