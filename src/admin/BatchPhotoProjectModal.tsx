@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ProjectCategory } from '../types';
-import { saveProjectApi, uploadMediaApi } from '../lib/api';
-import { Upload, X, Check, Image as ImageIcon, Layers, Sparkles } from 'lucide-react';
+import { saveProjectApi, uploadMediaBatchApi } from '../lib/api';
+import { Upload, X, Check, Image as ImageIcon, Layers, Sparkles, Loader2 } from 'lucide-react';
 
 interface BatchPhotoProjectModalProps {
   isOpen: boolean;
@@ -41,6 +41,7 @@ export const BatchPhotoProjectModal: React.FC<BatchPhotoProjectModalProps> = ({
   onSuccess
 }) => {
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
   const [processing, setProcessing] = useState(false);
   const [groups, setGroups] = useState<GroupedProject[]>([]);
   const [error, setError] = useState('');
@@ -52,14 +53,17 @@ export const BatchPhotoProjectModal: React.FC<BatchPhotoProjectModalProps> = ({
     if (!files || files.length === 0) return;
 
     setUploading(true);
+    setUploadProgress({ current: 0, total: files.length });
     setError('');
 
     try {
-      const uploadedMedia: { url: string; originalName: string }[] = [];
-      for (let i = 0; i < files.length; i++) {
-        const item = await uploadMediaApi(files[i]);
-        uploadedMedia.push({ url: item.url, originalName: item.originalName });
-      }
+      const uploadedItems = await uploadMediaBatchApi(files, (completed, total) => {
+        setUploadProgress({ current: completed, total });
+      });
+
+      const uploadedMedia = uploadedItems
+        .filter(item => Boolean(item?.url))
+        .map(item => ({ url: item.url, originalName: item.originalName }));
 
       // Group uploaded media by extracted project name
       const groupsMap = new Map<string, GroupedProject>();
@@ -105,6 +109,7 @@ export const BatchPhotoProjectModal: React.FC<BatchPhotoProjectModalProps> = ({
       setError('Failed to upload some image files. Please try again.');
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -115,28 +120,31 @@ export const BatchPhotoProjectModal: React.FC<BatchPhotoProjectModalProps> = ({
     setError('');
 
     try {
-      for (const group of groups) {
-        if (!group.title.trim() || group.images.length === 0) continue;
+      const validGroups = groups.filter(g => g.title.trim() && g.images.length > 0);
+      
+      // Save all grouped projects in parallel
+      await Promise.all(
+        validGroups.map(group => {
+          const heroUrl = group.images[group.heroIndex]?.url || group.images[0].url;
+          const hoverUrl = group.images[1]?.url || heroUrl;
+          const galleryUrls = group.images.map(img => img.url);
 
-        const heroUrl = group.images[group.heroIndex]?.url || group.images[0].url;
-        const hoverUrl = group.images[1]?.url || heroUrl;
-        const galleryUrls = group.images.map(img => img.url);
-
-        await saveProjectApi({
-          title: group.title.trim(),
-          category: group.category,
-          year: group.year,
-          role: group.role,
-          medium: 'Digital Scenography & Project Mapping',
-          shortDescription: `A case study exploring ${group.title.toLowerCase()} through immersive spatial projection.`,
-          longDescription: `${group.title} integrates high-resolution spatial projection, custom real-time canvas architectures, and digital scenography.`,
-          heroMedia: heroUrl,
-          hoverMedia: hoverUrl,
-          gallery: galleryUrls,
-          featured: false,
-          published: true
-        });
-      }
+          return saveProjectApi({
+            title: group.title.trim(),
+            category: group.category,
+            year: group.year,
+            role: group.role,
+            medium: 'Digital Scenography & Project Mapping',
+            shortDescription: `A case study exploring ${group.title.toLowerCase()} through immersive spatial projection.`,
+            longDescription: `${group.title} integrates high-resolution spatial projection, custom real-time canvas architectures, and digital scenography.`,
+            heroMedia: heroUrl,
+            hoverMedia: hoverUrl,
+            gallery: galleryUrls,
+            featured: false,
+            published: true
+          });
+        })
+      );
 
       onSuccess();
       onClose();

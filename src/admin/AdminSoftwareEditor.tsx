@@ -376,16 +376,15 @@ export const AdminSoftwareEditor: React.FC = () => {
       newToolsList = tools.map(t => (t.id === updated.id ? updated : t));
     }
 
-    setSaving(true);
+    // Instant optimistic update
+    setTools(newToolsList);
+    setEditingTool(null);
+    setMessage(`"${updated.name}" saved!`);
+
     try {
-      const saved = await saveSoftwareToolsApi(newToolsList);
-      setTools(saved);
-      setMessage(`"${updated.name}" saved and synchronized!`);
-      setEditingTool(null);
+      await saveSoftwareToolsApi(newToolsList);
     } catch {
-      alert('Failed to save software tool');
-    } finally {
-      setSaving(false);
+      console.warn('Background sync warning for software stack');
     }
   };
 
@@ -393,15 +392,14 @@ export const AdminSoftwareEditor: React.FC = () => {
     if (!confirm(`Are you sure you want to remove "${name}" from the software stack?`)) return;
 
     const filtered = tools.filter(t => t.id !== id);
-    setSaving(true);
+    // Instant optimistic UI update
+    setTools(filtered);
+    setMessage(`Removed "${name}" from software stack.`);
+
     try {
-      const saved = await saveSoftwareToolsApi(filtered);
-      setTools(saved);
-      setMessage(`Removed "${name}" from software stack.`);
+      await saveSoftwareToolsApi(filtered);
     } catch {
-      alert('Failed to delete tool');
-    } finally {
-      setSaving(false);
+      console.warn('Background sync warning on delete');
     }
   };
 
@@ -409,11 +407,13 @@ export const AdminSoftwareEditor: React.FC = () => {
     const updated = tools.map(t =>
       t.id === tool.id ? { ...t, enabled: t.enabled === false ? true : false } : t
     );
+    // Instant optimistic UI toggle
+    setTools(updated);
+
     try {
-      const saved = await saveSoftwareToolsApi(updated);
-      setTools(saved);
+      await saveSoftwareToolsApi(updated);
     } catch {
-      alert('Failed to update tool');
+      console.warn('Background sync warning on toggle');
     }
   };
 
@@ -428,24 +428,26 @@ export const AdminSoftwareEditor: React.FC = () => {
 
     // update sortOrder values
     const reordered = copy.map((t, idx) => ({ ...t, sortOrder: idx + 1 }));
+    // Instant optimistic reorder
     setTools(reordered);
 
     try {
       await saveSoftwareToolsApi(reordered);
     } catch {
-      alert('Failed to save reordered list');
+      console.warn('Background sync warning on reorder');
     }
   };
 
   const handleResetDefaults = async () => {
     if (confirm('Reset software stack back to the 10 default showcase tools (Unreal Engine, After Effects, Photoshop, 3ds Max, V-Ray, Lumion, Premiere Pro, AutoCAD, Resolume Arena, CorelDRAW)?')) {
       setSaving(true);
+      setTools(initialSoftwareTools);
+      setMessage('Reset to 10 official software stack tools!');
       try {
         const reset = await resetSoftwareToolsApi();
         setTools(reset);
-        setMessage('Reset to 10 official software stack tools!');
       } catch {
-        alert('Failed to reset tools');
+        console.warn('Reset sync warning');
       } finally {
         setSaving(false);
       }

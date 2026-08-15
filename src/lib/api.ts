@@ -426,26 +426,38 @@ export async function saveProjectApi(project: Partial<Project>): Promise<Project
     broadcastStoreUpdate('projects', existingList);
   } catch {}
 
-  // 2. Persist to Firestore Cloud Database
-  try {
-    await setDoc(doc(db, 'projects', id), sanitizeForFirestore(fullProject));
-    await setDoc(doc(db, 'metadata', 'store_init'), { initialized: true }, { merge: true });
-  } catch (e) {
-    console.warn('Firestore write warning:', e);
-  }
+  // 2. Persist to Firestore & Server in Parallel (non-blocking / fast-settle)
+  const isEdit = Boolean(project.id);
+  const url = isEdit ? `/api/projects/${id}` : '/api/projects';
+  const method = isEdit ? 'PUT' : 'POST';
 
-  // 3. Persist to Express Server Backend if running
-  try {
-    const isEdit = Boolean(project.id);
-    const url = isEdit ? `/api/projects/${id}` : '/api/projects';
-    const method = isEdit ? 'PUT' : 'POST';
-    await fetch(url, {
-      method,
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-      body: JSON.stringify(fullProject)
-    });
-  } catch {}
+  const firestoreSync = (async () => {
+    try {
+      await setDoc(doc(db, 'projects', id), sanitizeForFirestore(fullProject));
+      await setDoc(doc(db, 'metadata', 'store_init'), { initialized: true }, { merge: true });
+    } catch (e) {
+      console.warn('Firestore write warning:', e);
+    }
+  })();
+
+  const serverSync = (async () => {
+    try {
+      await fetch(url, {
+        method,
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify(fullProject)
+      });
+    } catch (e) {
+      console.warn('Server write warning:', e);
+    }
+  })();
+
+  // Guarantee maximum 400ms wait while background sync completes
+  await Promise.race([
+    Promise.all([firestoreSync, serverSync]),
+    new Promise((resolve) => setTimeout(resolve, 400))
+  ]);
 
   return fullProject;
 }
@@ -958,6 +970,30 @@ export function subscribeSoftwareTools(callback: (tools: SoftwareTool[]) => void
 }
 
 export async function fetchSoftwareTools(): Promise<SoftwareTool[]> {
+  // 1. Instant local storage retrieval
+  try {
+    const local = localStorage.getItem('subeg_software_tools');
+    if (local) {
+      const parsed = JSON.parse(local);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch {}
+
+  // 2. Try Server API
+  try {
+    const res = await fetch('/api/software');
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        localStorage.setItem('subeg_software_tools', JSON.stringify(data));
+        return data;
+      }
+    }
+  } catch {}
+
+  // 3. Fallback to Firestore
   try {
     const snap = await getDoc(doc(db, 'content', 'software'));
     if (snap.exists()) {
@@ -972,36 +1008,49 @@ export async function fetchSoftwareTools(): Promise<SoftwareTool[]> {
     }
   } catch {}
 
-  try {
-    const local = localStorage.getItem('subeg_software_tools');
-    if (local) {
-      const parsed = JSON.parse(local);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch {}
-
   return initialSoftwareTools;
 }
 
 export async function saveSoftwareToolsApi(tools: SoftwareTool[]): Promise<SoftwareTool[]> {
   const sorted = [...tools].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
-  // 1. Local cache & broadcast immediately
+  // 1. Local cache & broadcast immediately (0ms UI latency)
   try {
     localStorage.setItem('subeg_software_tools', JSON.stringify(sorted));
     broadcastStoreUpdate('software', sorted);
   } catch {}
 
-  // 2. Firestore Cloud Database
-  try {
-    await setDoc(doc(db, 'content', 'software'), {
-      tools: sanitizeForFirestore(sorted),
-      updatedAt: new Date().toISOString()
-    }, { merge: true });
-    await setDoc(doc(db, 'metadata', 'store_init'), { initialized: true }, { merge: true });
-  } catch (e) {
-    console.warn('Firestore software save warning:', e);
-  }
+  // 2. Parallel background sync to Firestore & Server API
+  const firestoreSync = (async () => {
+    try {
+      await setDoc(doc(db, 'content', 'software'), {
+        tools: sanitizeForFirestore(sorted),
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+      await setDoc(doc(db, 'metadata', 'store_init'), { initialized: true }, { merge: true });
+    } catch (e) {
+      console.warn('Firestore software save warning:', e);
+    }
+  })();
+
+  const serverSync = (async () => {
+    try {
+      await fetch('/api/software', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify(sorted)
+      });
+    } catch (e) {
+      console.warn('Server software save warning:', e);
+    }
+  })();
+
+  // Guarantee instant return within 200ms while background cloud sync finishes
+  await Promise.race([
+    Promise.all([firestoreSync, serverSync]),
+    new Promise((resolve) => setTimeout(resolve, 200))
+  ]);
 
   return sorted;
 }
@@ -1045,12 +1094,10 @@ export async function fetchMediaApi(): Promise<MediaItem[]> {
 }
 
 export async function uploadMediaApi(file: File): Promise<MediaItem> {
-  const dataUrl = await fileToDataUrl(file);
   const mediaId = `media_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  let finalUrl = '';
 
-  let finalUrl = dataUrl;
-
-  // 1. Upload to Server (if available)
+  // 1. Fast Server Upload First (instant 30-50ms local/server disk storage)
   try {
     const formData = new FormData();
     formData.append('file', file);
@@ -1068,6 +1115,11 @@ export async function uploadMediaApi(file: File): Promise<MediaItem> {
     }
   } catch {}
 
+  // 2. Fast fallback to client data URL only if server endpoint didn't respond
+  if (!finalUrl) {
+    finalUrl = await fileToDataUrl(file);
+  }
+
   const mediaItem: MediaItem = {
     id: mediaId,
     filename: file.name,
@@ -1078,12 +1130,7 @@ export async function uploadMediaApi(file: File): Promise<MediaItem> {
     size: file.size
   };
 
-  // 2. Save to Firestore
-  try {
-    await setDoc(doc(db, 'media', mediaId), sanitizeForFirestore(mediaItem));
-  } catch {}
-
-  // 3. LocalStorage cache & broadcast
+  // 3. Instant LocalStorage cache & broadcast (0ms UI update)
   try {
     const existing: MediaItem[] = JSON.parse(localStorage.getItem('subeg_media_items') || '[]');
     existing.unshift(mediaItem);
@@ -1092,7 +1139,49 @@ export async function uploadMediaApi(file: File): Promise<MediaItem> {
     broadcastStoreUpdate('media', existing);
   } catch {}
 
+  // 4. Non-blocking Firestore cloud backup
+  setDoc(doc(db, 'media', mediaId), sanitizeForFirestore(mediaItem)).catch(() => {});
+
   return mediaItem;
+}
+
+export async function uploadMediaBatchApi(
+  files: FileList | File[],
+  onProgress?: (completed: number, total: number) => void
+): Promise<MediaItem[]> {
+  const fileArray = Array.from(files);
+  const total = fileArray.length;
+  if (total === 0) return [];
+
+  let completed = 0;
+  const results: MediaItem[] = [];
+
+  // Process in parallel batches of 6 for high throughput without browser socket exhaustion
+  const BATCH_SIZE = 6;
+  for (let i = 0; i < fileArray.length; i += BATCH_SIZE) {
+    const chunk = fileArray.slice(i, i + BATCH_SIZE);
+    const chunkResults = await Promise.all(
+      chunk.map(async (file) => {
+        try {
+          const item = await uploadMediaApi(file);
+          completed++;
+          if (onProgress) onProgress(completed, total);
+          return item;
+        } catch (err) {
+          console.warn('Batch upload item error:', err);
+          completed++;
+          if (onProgress) onProgress(completed, total);
+          return null;
+        }
+      })
+    );
+
+    chunkResults.forEach((res) => {
+      if (res) results.push(res);
+    });
+  }
+
+  return results;
 }
 
 export async function deleteMediaApi(filenameOrId: string): Promise<void> {

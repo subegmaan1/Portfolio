@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Project, ProjectCategory } from '../types';
-import { deleteProjectApi, saveProjectApi, uploadMediaApi } from '../lib/api';
+import { deleteProjectApi, saveProjectApi, uploadMediaApi, uploadMediaBatchApi } from '../lib/api';
 import { parseVideoUrl } from '../lib/videoUtils';
 import {
   ArrowLeft,
@@ -17,7 +17,8 @@ import {
   ChevronsRight,
   Star,
   ArrowUpDown,
-  AlertTriangle
+  AlertTriangle,
+  Loader2
 } from 'lucide-react';
 
 interface AdminProjectFormProps {
@@ -59,6 +60,7 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
   const [published, setPublished] = useState(initialProject?.published ?? true);
 
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -82,16 +84,14 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
     if (!files || files.length === 0) return;
 
     setUploading(true);
+    setUploadProgress({ current: 0, total: files.length });
     setError('');
     try {
       if (target === 'gallery') {
-        const uploadedUrls: string[] = [];
-        for (let i = 0; i < files.length; i++) {
-          const media = await uploadMediaApi(files[i]);
-          if (media?.url) {
-            uploadedUrls.push(media.url);
-          }
-        }
+        const uploadedItems = await uploadMediaBatchApi(files, (completed, total) => {
+          setUploadProgress({ current: completed, total });
+        });
+        const uploadedUrls = uploadedItems.map(item => item.url).filter(Boolean);
         if (uploadedUrls.length > 0) {
           setGallery(prev => [...prev.filter(Boolean), ...uploadedUrls]);
           // Also set hero media if currently empty
@@ -109,6 +109,7 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
       setError('Failed to upload file(s). Please try again.');
     } finally {
       setUploading(false);
+      setUploadProgress(null);
       e.target.value = '';
     }
   };
@@ -266,7 +267,7 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
           className="px-6 py-2.5 bg-neutral-100 text-neutral-950 font-mono text-xs font-bold uppercase tracking-wider hover:bg-white transition-colors flex items-center space-x-2 disabled:opacity-50"
           id="save-project-btn"
         >
-          <Save className="w-4 h-4" />
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           <span>{saving ? 'Saving...' : 'Save Project'}</span>
         </button>
       </div>
@@ -393,8 +394,8 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
                 className="w-full px-4 py-2 bg-neutral-950 border border-neutral-800 text-neutral-100"
               />
               <label className={`inline-flex items-center space-x-2 px-3 py-1.5 bg-neutral-800 border border-neutral-700 text-neutral-200 cursor-pointer hover:bg-neutral-700 ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
-                <Upload className="w-3.5 h-3.5" />
-                <span>{uploading ? 'Optimizing...' : 'Upload File'}</span>
+                {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-teal-400" /> : <Upload className="w-3.5 h-3.5" />}
+                <span>{uploading ? 'Uploading...' : 'Upload File'}</span>
                 <input
                   type="file"
                   onChange={e => handleFileUpload(e, 'hero')}
@@ -421,8 +422,8 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
                 className="w-full px-4 py-2 bg-neutral-950 border border-neutral-800 text-neutral-100"
               />
               <label className={`inline-flex items-center space-x-2 px-3 py-1.5 bg-neutral-800 border border-neutral-700 text-neutral-200 cursor-pointer hover:bg-neutral-700 ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
-                <Upload className="w-3.5 h-3.5" />
-                <span>{uploading ? 'Optimizing...' : 'Upload File'}</span>
+                {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-teal-400" /> : <Upload className="w-3.5 h-3.5" />}
+                <span>{uploading ? 'Uploading...' : 'Upload File'}</span>
                 <input
                   type="file"
                   onChange={e => handleFileUpload(e, 'hover')}
@@ -649,9 +650,17 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
                 >
                   + Add URL
                 </button>
-                <label className={`px-3 py-1.5 bg-teal-500/20 hover:bg-teal-500/30 border border-teal-500/50 text-teal-300 text-xs font-mono font-bold cursor-pointer transition-colors flex items-center space-x-1.5 ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>{uploading ? 'Optimizing Photos...' : '+ Upload Photos'}</span>
+                <label className={`px-3 py-1.5 bg-teal-500/20 hover:bg-teal-500/30 border border-teal-500/50 text-teal-300 text-xs font-mono font-bold cursor-pointer transition-colors flex items-center space-x-1.5 ${uploading ? 'opacity-80 pointer-events-none' : ''}`}>
+                  {uploading ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-teal-400" />
+                  ) : (
+                    <Upload className="w-3.5 h-3.5" />
+                  )}
+                  <span>
+                    {uploading && uploadProgress
+                      ? `Uploading ${uploadProgress.current}/${uploadProgress.total} (${Math.round((uploadProgress.current / Math.max(1, uploadProgress.total)) * 100)}%)...`
+                      : '+ Upload Photos'}
+                  </span>
                   <input
                     type="file"
                     multiple
@@ -883,7 +892,7 @@ export const AdminProjectForm: React.FC<AdminProjectFormProps> = ({
               disabled={saving}
               className="px-8 py-2.5 bg-neutral-100 text-neutral-950 font-bold uppercase hover:bg-white disabled:opacity-50 font-mono text-xs tracking-wider flex items-center space-x-2"
             >
-              <Save className="w-3.5 h-3.5" />
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
               <span>{saving ? 'Saving...' : 'Save Project'}</span>
             </button>
           </div>
